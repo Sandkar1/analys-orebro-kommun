@@ -1,5 +1,5 @@
 ﻿const exportedAt=window.exportedAt;
-const programVersion="v89.0";
+const programVersion="v90";
 const municipalWorkEnabled=true;
 const historicPack=window.historicPack;
 let decisionPack=window.municipalProtocolPack,documentPack=window.municipalDocumentPack,decisionPackPromise=null;
