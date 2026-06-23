@@ -2906,6 +2906,38 @@ td.num{
     grid-template-columns:1fr;
   }
 
+  .raw-toolbar,
+  .raw-filter-row,
+  #decisionFilters,
+  .decision-activity-filters{
+    min-width:0;
+    max-width:100%;
+  }
+
+  .raw-toolbar .field,
+  .raw-filter-row .field,
+  #decisionFilters .field,
+  .decision-search-field,
+  .decision-activity-search-field{
+    min-width:0;
+    max-width:100%;
+  }
+
+  .decision-search-box,
+  .table-search-box{
+    width:100%;
+    max-width:100%;
+    min-width:0;
+  }
+
+  .decision-search-box input,
+  .table-search-box input,
+  input[type="search"]{
+    width:100%;
+    max-width:100%;
+    min-width:0;
+  }
+
   .meta{
     grid-template-columns:1fr;
   }
