@@ -6,7 +6,7 @@ $ErrorActionPreference = "Stop"
 
 git status --short
 
-git add .
+git add -A
 
 if ([string]::IsNullOrWhiteSpace($Message)) {
   $Message = "Update $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
@@ -15,7 +15,8 @@ if ([string]::IsNullOrWhiteSpace($Message)) {
 git diff --cached --quiet
 if ($LASTEXITCODE -eq 0) {
   Write-Host "No changes to commit."
-  exit 0
+  git push
+  exit $LASTEXITCODE
 }
 if ($LASTEXITCODE -ne 1) {
   throw "Could not check staged changes."

@@ -2,29 +2,19 @@
 decisionPointSearchMatches=function(row){
   const q=decisionSearchNormalizeFinal(decisionSearchQuery);
   if(!q)return true;
+  if(row?.isMeeting&&typeof decisionMeetingSearchTextOnDemandFinal==='function'){
+    const text=decisionMeetingSearchTextOnDemandFinal(row);
+    return typeof fuzzySearchTextMatches==='function'?fuzzySearchTextMatches(text,q):text.includes(q);
+  }
   let text=decisionPointSearchIndex.get(row);
   if(text===undefined){
     text=decisionSearchNormalizeFinal([
       row.title,row.point,row.description,row.body,row.diary,row.caseNumber,row.documentTitle,
-      row.protocolHeader,row.abstractText,row.fullDecisionText,row.result,row.proposalType
+      row.protocolHeader,row.abstractText,row.fullDecisionText,row.result,row.proposalType,row.meetingSearchText
     ].join(' '));
     decisionPointSearchIndex.set(row,text);
   }
   return fuzzySearchTextMatches(text,q);
-};
-
-filteredDecisionActivityRows=function(){
-  const q=decisionSearchNormalizeFinal(decisionActivitySearchQuery),types=selectedActivityValues('type'),parties=selectedActivityValues('party'),politicalOwners=selectedActivityValues('politicalOwner'),officialOwners=selectedActivityValues('officialOwner');
-  return decisionActivityRows.filter(r=>{
-    if(!decisionActivityIncludedByDate(r)||types.length&&!types.includes(r.type)||parties.length&&!parties.includes(r.party)||politicalOwners.length&&!politicalOwners.includes(r.politicalOwner)||officialOwners.length&&!officialOwners.includes(r.officialOwner))return false;
-    if(!q)return true;
-    let text=decisionActivitySearchIndex.get(r);
-    if(text===undefined){
-      text=decisionSearchNormalizeFinal([r.type,r.title,r.summary,...(r.importantPoints||[]),r.politicalOwner,r.officialOwner,r.answeredBy,r.party,r.organ,r.sourceSection,r.sourceTitle,r.id,r.caseNumber,...(r.headings||[]),...(r.caseNumbersDetected||[]),...(r.datesDetected||[]),...(r.responsibilityLines||[])].join(' '));
-      decisionActivitySearchIndex.set(r,text);
-    }
-    return fuzzySearchTextMatches(text,q);
-  });
 };
 
 function decisionReadableTextBlocks(value){
@@ -194,44 +184,190 @@ municipalCaseCellHtml=function(row){
   return `<div class="decision-case-cell"><strong>${esc(title)}</strong>${preview?`<small class="decision-point-note" title="${esc(preview)}">${esc(preview)}</small>`:''}${decisionMainCaseMetaHtmlFinal(row)}</div>`;
 };
 
-function decisionDocumentDateLabel(value){
-  return value?decisionDateDisplay(value):'\u2014';
+/* Runtime indexes and stable caches for the municipal decision view. The source
+   data is immutable after a pack has been prepared, so repeated detail renders
+   must not rerun the full decoration pipeline or scan every protocol row. */
+let decisionRuntimePreparedPackFinal=null;
+let decisionRuntimeIndexesFinal=null;
+let decisionFilteredPointCacheFinal=null;
+let decisionDetailPayloadCacheFinal=null;
+let decisionDetailRowsCacheFinal=null;
+let decisionFilterUiKeyFinal='';
+
+function decisionRuntimeNormalizeReferenceFinal(value){
+  return String(value||'').normalize('NFC').toLocaleLowerCase('sv-SE').replace(/\s+/g,' ').trim();
 }
 
-decisionActivityDateHtml=function(row){
-  const label=row.date||row.dateSort||'';
-  const basis={
-    revision_date:'Senast reviderad',
-    document_date:'Dokumentdatum',
-    adoption_date:'Antagen',
-    effective_date:'G\u00e4ller fr\u00e5n',
-    detected_in_title_year:'\u00c5r i titel'
-  }[row.dateBasis]||'';
-  return label?`${esc(label)}${basis?`<span class="decision-activity-date-note">${esc(basis)}</span>`:''}`:'<span class="muted">Odaterat</span>';
+function decisionRuntimePushIndexFinal(map,key,row){
+  if(!key)return;
+  if(!map.has(key))map.set(key,[]);
+  map.get(key).push(row);
+}
+
+function decisionBuildRuntimeIndexesFinal(){
+  const proposalByKey=new Map(),decisionById=new Map(),pointRows=new Map(),diaryRows=new Map(),dateRows=new Map();
+  for(const row of decisionAllPointRows){
+    proposalByKey.set(decisionProposalKey(row),row);
+    decisionRuntimePushIndexFinal(pointRows,decisionReferencePointBaseActive(row.point),row);
+    decisionRuntimePushIndexFinal(diaryRows,decisionRuntimeNormalizeReferenceFinal(row.diary),row);
+    decisionRuntimePushIndexFinal(dateRows,String(row.date||''),row);
+  }
+  for(const row of decisionDecisionRows)decisionById.set(String(row.id||''),row);
+  decisionRuntimeIndexesFinal={proposalByKey,decisionById,pointRows,diaryRows,dateRows};
+  decisionFilteredPointCacheFinal=null;
+  decisionDetailPayloadCacheFinal=null;
+  decisionDetailRowsCacheFinal=null;
+}
+
+const ensureDecisionDataBeforeRuntimeIndexesFinal=ensureDecisionData;
+ensureDecisionData=function(){
+  if(decisionReady&&decisionRuntimePreparedPackFinal===decisionPack)return;
+  ensureDecisionDataBeforeRuntimeIndexesFinal();
+  if(!decisionReady)return;
+  decisionBuildRuntimeIndexesFinal();
+  decisionRuntimePreparedPackFinal=decisionPack;
 };
 
-renderDecisionActivityDetail=function(row){
-  $('decisionActivityListPane').hidden=true;
-  $('decisionActivityDetailPane').hidden=false;
-  $('decisionActivityDetailTitle').textContent=row.title||'Styrdokument';
-  const source=row.url||row.localPath||'';
-  $('decisionActivityDetailMeta').innerHTML=`<span>${esc([row.type,row.party].filter(Boolean).join(' \u00b7 '))}</span>${source?` <a class="decision-official-link" href="${esc(source)}" target="_blank" rel="noopener noreferrer">\u00d6ppna k\u00e4lla</a>`:''}`;
-  $('decisionActivityDetailOverview').innerHTML=[
-    ['Dokumenttyp',row.type||'Dokument'],
-    ['Aktuellt datum',decisionDocumentDateLabel(row.dateSort)],
-    ['Dokumentdatum',decisionDocumentDateLabel(row.documentDate)],
-    ['Antagen',decisionDocumentDateLabel(row.adoptionDate)],
-    ['G\u00e4ller fr\u00e5n',decisionDocumentDateLabel(row.effectiveDate)],
-    ['Senast reviderad',decisionDocumentDateLabel(row.revisionDate)],
-    ['G\u00e4ller till',decisionDocumentDateLabel(row.expiryDate)]
-  ].map(([k,v])=>`<div class="card"><span>${esc(k)}</span><b>${esc(String(v))}</b></div>`).join('');
-  const sourceLinks=[row.url?`<a href="${esc(row.url)}" target="_blank" rel="noopener noreferrer">\u00d6ppna hos \u00d6rebro kommun</a>`:'',row.localPath?`<span>${esc(row.localPath)}</span>`:''].filter(Boolean).join('<br>');
-  $('decisionActivityDetailBody').innerHTML=[
-    `<article class="decision-point-card document-detail-summary"><h3>Sammanfattning</h3><p>${esc(row.summary||'Sammanfattning saknas.')}</p></article>`,
-    `<article class="decision-point-card"><h3>Viktigaste punkter</h3>${decisionDocumentDetailListFinal(row.importantPoints||[])}</article>`,
-    `<article class="decision-point-card"><h3>Dokumentinformation</h3><dl class="document-meta-list"><dt>Omr\u00e5de/organ</dt><dd>${esc(row.party||'\u2014')}</dd><dt>Politisk niv\u00e5</dt><dd>${esc(row.politicalOwner||'\u2014')}</dd><dt>Tj\u00e4nstemanniv\u00e5</dt><dd>${esc(row.officialOwner||'\u2014')}</dd><dt>Diarienummer</dt><dd>${esc(row.caseNumber||row.caseNumbersDetected?.[0]||'\u2014')}</dd><dt>K\u00e4lla</dt><dd>${sourceLinks||'\u2014'}</dd></dl></article>`,
-    row.headings?.length?`<article class="decision-point-card"><h3>Identifierade rubriker</h3>${decisionDocumentDetailListFinal(row.headings.slice(0,12))}</article>`:'',
-    row.responsibilityLines?.length?`<article class="decision-point-card"><h3>Beslut och ansvar</h3>${decisionDocumentDetailListFinal(row.responsibilityLines.slice(0,8))}</article>`:'',
-    row.summaryLimitations?.length?`<article class="decision-point-card"><h3>Begr\u00e4nsningar</h3>${decisionDocumentDetailListFinal(row.summaryLimitations)}</article>`:''
-  ].filter(Boolean).join('');
+function decisionRuntimeFilterStateKeyFinal(){
+  return JSON.stringify([
+    decisionDateRanges.map(range=>[range.from,range.to]),
+    decisionSearchQuery,
+    decisionFilterIds.map(id=>[id,...selectedDecisionValues(id)])
+  ]);
+}
+
+const filteredDecisionPointRowsBeforeRuntimeCacheFinal=filteredDecisionPointRows;
+filteredDecisionPointRows=function(){
+  ensureDecisionData();
+  const key=decisionRuntimeFilterStateKeyFinal();
+  if(decisionFilteredPointCacheFinal?.key===key)return decisionFilteredPointCacheFinal.rows;
+  const rows=filteredDecisionPointRowsBeforeRuntimeCacheFinal();
+  const proposalByKey=new Map(rows.map(row=>[decisionProposalKey(row),row]));
+  decisionFilteredPointCacheFinal={key,rows,proposalByKey};
+  decisionDetailPayloadCacheFinal=null;
+  decisionDetailRowsCacheFinal=null;
+  return rows;
+};
+
+decisionProposalRowByKeyAnyFinal=function(key){
+  const text=String(key||'');
+  const rows=filteredDecisionPointRows();
+  const row=decisionFilteredPointCacheFinal?.proposalByKey.get(text)||
+    decisionRuntimeIndexesFinal?.proposalByKey.get(text)||null;
+  return decisionHydrateTextFieldsFinal(row);
+};
+decisionProposalRowByKey=function(key){return decisionProposalRowByKeyAnyFinal(key);};
+
+const decisionDetailRowsBeforeRuntimeCacheFinal=decisionDetailRows;
+decisionDetailRows=function(tab){
+  const stateKey=decisionRuntimeFilterStateKeyFinal();
+  const tabKey=typeof tab==='object'
+    ?JSON.stringify([tab.id,tab.point,tab.sourcePoint,tab.sourcePoints])
+    :String(tab||'');
+  const key=`${stateKey}|${tabKey}`;
+  if(decisionDetailRowsCacheFinal?.key===key)return decisionDetailRowsCacheFinal.rows;
+  const rows=decisionDetailRowsBeforeRuntimeCacheFinal(tab);
+  decisionDetailRowsCacheFinal={key,rows};
+  return rows;
+};
+
+const decisionDetailPayloadBeforeRuntimeCacheFinal=decisionDetailPayload;
+decisionDetailPayload=function(tabOrId,proposalKey=''){
+  const tab=typeof tabOrId==='object'?tabOrId:{id:String(tabOrId||''),proposalKey:String(proposalKey||'')};
+  const key=`${decisionRuntimeFilterStateKeyFinal()}|${JSON.stringify([tab.id,tab.point,tab.sourcePoint,tab.sourcePoints,tab.proposalKey,proposalKey])}`;
+  if(decisionDetailPayloadCacheFinal?.key===key)return decisionDetailPayloadCacheFinal.payload;
+  const payload=decisionDetailPayloadBeforeRuntimeCacheFinal(tabOrId,proposalKey);
+  decisionDetailPayloadCacheFinal={key,payload};
+  return payload;
+};
+
+const buildDecisionFiltersBeforeRuntimeCacheFinal=buildDecisionFilters;
+buildDecisionFilters=function(){
+  if(!decisionReady)return buildDecisionFiltersBeforeRuntimeCacheFinal();
+  const key=JSON.stringify([
+    decisionDateRanges.map(range=>[range.from,range.to]),
+    decisionFilterIds.map(id=>[id,...selectedDecisionValues(id)])
+  ]);
+  if(key===decisionFilterUiKeyFinal){
+    syncDecisionDateRangeControls();
+    syncDecisionSearchControl();
+    return;
+  }
+  buildDecisionFiltersBeforeRuntimeCacheFinal();
+  decisionFilterUiKeyFinal=key;
+};
+
+decisionReferencePointTargetFinal=function(current,label){
+  ensureDecisionData();
+  const base=decisionReferencePointBaseActive(label);
+  if(!base)return null;
+  const matches=decisionRuntimeIndexesFinal?.pointRows.get(base)||[];
+  if(!matches.length)return null;
+  const sameDoc=matches.filter(row=>row.documentTitle&&current?.documentTitle&&row.documentTitle===current.documentTitle);
+  const sameMeeting=matches.filter(row=>row.date===current?.date&&row.body===current?.body);
+  const sameBody=matches.filter(row=>row.body===current?.body);
+  return decisionReferenceBestRowFinal(sameDoc.length?sameDoc:sameMeeting.length?sameMeeting:sameBody.length?sameBody:matches,current);
+};
+
+decisionReferenceDiaryTargetFinal=function(current,label){
+  ensureDecisionData();
+  const matches=decisionRuntimeIndexesFinal?.diaryRows.get(decisionRuntimeNormalizeReferenceFinal(label))||[];
+  if(!matches.length)return null;
+  const sameProtocol=matches.filter(row=>row.documentTitle&&current?.documentTitle&&row.documentTitle===current.documentTitle);
+  const sameMeeting=matches.filter(row=>row.date===current?.date&&row.body===current?.body);
+  return decisionReferenceBestRowFinal(sameProtocol.length?sameProtocol:sameMeeting.length?sameMeeting:matches,current);
+};
+
+decisionReferenceDateTargetFinal=function(current,label){
+  ensureDecisionData();
+  const iso=/^20\d{2}-\d{2}-\d{2}$/.test(label)?label:decisionSwedishDateToIsoFinal(label);
+  if(!iso)return null;
+  const rows=decisionRuntimeIndexesFinal?.dateRows.get(iso)||[];
+  if(!rows.length)return null;
+  const sameMatter=rows.filter(row=>row.matterId&&current?.matterId&&row.matterId===current.matterId);
+  if(sameMatter.length)return {kind:'internal',row:decisionReferenceBestRowFinal(sameMatter,current)};
+  const sameBody=rows.filter(row=>row.body&&current?.body&&row.body===current.body);
+  return {kind:'source',row:sameBody[0]||rows[0]};
+};
+
+function decisionBindReferenceNavigationFinal(){
+  const host=$('decisionDetailGroups');
+  if(!host||host.dataset.referenceNavigationBound==='1')return;
+  host.dataset.referenceNavigationBound='1';
+  host.addEventListener('click',event=>{
+    const button=event.target.closest?.('.decision-text-ref');
+    if(!button)return;
+    event.preventDefault();
+    event.stopPropagation();
+    openDecisionDetail(button.dataset.id,button.dataset.proposalKey);
+  });
+}
+
+const renderDecisionDetailViewBeforeRuntimeLinksFinal=renderDecisionDetailView;
+renderDecisionDetailView=function(tab){
+  renderDecisionDetailViewBeforeRuntimeLinksFinal(tab);
+  decisionBindReferenceNavigationFinal();
+};
+
+/* Swedish letters are not JavaScript ASCII word characters. Avoid \b before a
+   diary prefix so references such as "Ön 20/2025" are detected, while keeping
+   ordinary lower-case phrases such as "läsåret 2024/2025" as plain text. */
+decisionTextWithReferenceLinksActive=function(value,current){
+  const text=String(value||'');
+  const re=/(§\s*\d{1,4}(?:\.\d+)?|(?<![A-Za-zÅÄÖåäö])[A-ZÅÄÖ][A-Za-zÅÄÖåäö]{0,6}\s+\d{1,5}\/20\d{2}(?![A-Za-zÅÄÖåäö])|\b20\d{2}-\d{2}-\d{2}\b|\b\d{1,2}\s+(?:[Jj]anuari|[Ff]ebruari|[Mm]ars|[Aa]pril|[Mm]aj|[Jj]uni|[Jj]uli|[Aa]ugusti|[Ss]eptember|[Oo]ktober|[Nn]ovember|[Dd]ecember)(?:\s+20\d{2})?\b)/g;
+  let out='',last=0,match;
+  while((match=re.exec(text))){
+    const label=match[1];
+    const resolveLabel=/^\d{1,2}\s+(?:januari|februari|mars|april|maj|juni|juli|augusti|september|oktober|november|december)$/i.test(label)
+      ?decisionInferDateLabelYearFinal(text,match.index,label,current)
+      :label;
+    const resolved=decisionReferenceResolveFinal(resolveLabel,current);
+    out+=esc(text.slice(last,match.index));
+    if(resolved?.kind==='internal'&&resolved.row)out+=decisionReferenceInternalHtmlFinal(label,resolved.row);
+    else if(resolved?.kind==='source'&&resolved.row)out+=decisionReferenceSourceHtmlFinal(label,resolved.row);
+    else out+=esc(label);
+    last=re.lastIndex;
+  }
+  out+=esc(text.slice(last));
+  return out.replace(/\n/g,'<br>');
 };

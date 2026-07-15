@@ -168,10 +168,10 @@ applyRawState=async function(state){
 };
 function rawLoadMoreWithSpinnerFinal(wrap,update){
   if(!wrap||wrap.dataset.infiniteLoading==='1')return;
+  if(update&&update()===false)return;
   wrap.dataset.infiniteLoading='1';
   wrap.classList.add('table-results-updating','table-infinite-loading');
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
-    update();
     requestAnimationFrame(()=>{
       wrap.classList.remove('table-results-updating','table-infinite-loading');
       delete wrap.dataset.infiniteLoading;
@@ -190,10 +190,20 @@ rawMaybeLoadMore=function(kind){
     const rows=rawSortedRows(filteredRawRows()),total=(kind==='eligible'?rawEligibleRows(rows):rawIneligibleRows(rows)).length;
     if(kind==='eligible'){
       if(rawVisibleCount(rawEligiblePage,total)>=total)return;
-      rawLoadMoreWithSpinnerFinal(wrap,()=>{rawEligiblePage++;renderRawTable();});
+      rawLoadMoreWithSpinnerFinal(wrap,()=>{
+        if(rawVisibleCount(rawEligiblePage,total)>=total)return false;
+        rawEligiblePage++;
+        renderRawTable();
+        return true;
+      });
     }else{
       if(rawVisibleCount(rawIneligiblePage,total)>=total)return;
-      rawLoadMoreWithSpinnerFinal(wrap,()=>{rawIneligiblePage++;renderRawTable();});
+      rawLoadMoreWithSpinnerFinal(wrap,()=>{
+        if(rawVisibleCount(rawIneligiblePage,total)>=total)return false;
+        rawIneligiblePage++;
+        renderRawTable();
+        return true;
+      });
     }
   },{passive:true});
 };

@@ -1,7 +1,5 @@
 let decisionRows=[],decisionDecisionRows=[],decisionAllPointRows=[],decisionReady=false,decisionPageSizeValue=250,decisionTabs=[{kind:'list',id:'list',title:'Ärendelista',page:0}],decisionActiveTab=0,decisionDateRanges=[],decisionDatePickerOpen=false,decisionDateFrom='',decisionDateTo='',decisionDateDraftFrom='',decisionDateHover='',decisionCalendarMonth='',decisionSearchQuery='',decisionFilterLocks={decisionProposalType:[],decisionOrgan:[],decisionParty:[],decisionMember:[],decisionVote:[],decisionResult:[]};
 let decisionSortColumn='date',decisionSortDir='asc';
-let decisionActivityRows=[],decisionActivityTabs=[{kind:'list',id:'activity-list',title:'Styrdokument',page:0}],decisionActivityActiveTab=0,decisionActivitySearchQuery='',decisionActivityDateRanges=[],decisionActivityDatePickerOpen=false,decisionActivityDateDraftFrom='',decisionActivityDateHover='',decisionActivityCalendarMonth='',decisionActivityFilters={type:[],party:[],politicalOwner:[],officialOwner:[]};
-let decisionActivitySortColumn='date',decisionActivitySortDir='asc';
 const decisionFilterIds=['decisionOrgan','decisionProposalType','decisionParty','decisionMember','decisionVote','decisionResult'];
 
 function municipalText(value){return String(value??'');}
@@ -69,13 +67,41 @@ function normalizeDecisionDateRanges(value){const ranges=Array.isArray(value)?va
 function decisionMonthKey(value){const m=String(value||'').match(/^(\d{4})-(\d{2})/);return m?`${m[1]}-${m[2]}`:'';}
 function decisionAddMonths(monthKey,delta){const [y,m]=String(monthKey||'').split('-').map(Number);if(!y||!m)return'';const d=new Date(y,m-1+delta,1);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;}
 function decisionMonthLabel(monthKey){const [y,m]=String(monthKey||'').split('-').map(Number);if(!y||!m)return'';return new Date(y,m-1,1).toLocaleDateString('sv-SE',{month:'long',year:'numeric'});}
+function decisionCalendarMonthSelectHtml(monthKey){const selected=Number(String(monthKey||'').split('-')[1])||1,cap=s=>s?String(s).charAt(0).toUpperCase()+String(s).slice(1):'';return `<select class="date-calendar-month" aria-label="Månad">${Array.from({length:12},(_,i)=>`<option value="${String(i+1).padStart(2,'0')}" ${i+1===selected?'selected':''}>${esc(cap(new Date(2000,i,1).toLocaleDateString('sv-SE',{month:'long'})))}</option>`).join('')}</select>`;}
+function decisionCalendarYearSelectHtml(min,max,monthKey){const currentYear=Number(String(monthKey||'').split('-')[0])||new Date().getFullYear(),minYear=Number(String(min||monthKey||'').slice(0,4))||currentYear,maxYear=Number(String(max||monthKey||'').slice(0,4))||currentYear,from=Math.min(minYear,currentYear),to=Math.max(maxYear,currentYear);let html='<select class="date-calendar-year" aria-label="År">';for(let year=from;year<=to;year++)html+=`<option value="${year}" ${year===currentYear?'selected':''}>${year}</option>`;return html+'</select>';}
 function decisionDateRangeLabelFor(range){return `${decisionDateDisplay(range.from)} - ${decisionDateDisplay(range.to)}`;}
 function decisionDateMatches(date){const value=String(date||'');return !decisionDateRanges.length||decisionDateRanges.some(r=>value>=r.from&&value<=r.to);}
 function syncDecisionDateRangeControls(){const dates=decisionAvailableDates(),min=dates[0]||'',max=dates[dates.length-1]||'',from=$('decisionDateFrom'),to=$('decisionDateTo'),toggle=$('decisionDateToggle'),rangeLabel=decisionDateRanges.length?decisionDateRanges.map(decisionDateRangeLabelFor).join(', '):'Alla datum';if(from)from.value=decisionDateFrom;if(to)to.value=decisionDateTo;if(toggle){toggle.setAttribute('aria-expanded',decisionDatePickerOpen?'true':'false');toggle.setAttribute('aria-label',`Datum: ${rangeLabel}`);toggle.title=rangeLabel;}renderDecisionDateLocks();if(!decisionCalendarMonth)decisionCalendarMonth=decisionMonthKey(decisionDateFrom||decisionDateRanges[0]?.from||min||max);if(decisionDatePickerOpen)renderDecisionCalendar();}
 function updateDecisionCalendarPreview(){const host=$('decisionDateCalendar');if(!host)return;const previewStart=decisionDateDraftFrom&&decisionDateHover?(decisionDateDraftFrom<decisionDateHover?decisionDateDraftFrom:decisionDateHover):'',previewEnd=decisionDateDraftFrom&&decisionDateHover?(decisionDateDraftFrom<decisionDateHover?decisionDateHover:decisionDateDraftFrom):'';host.querySelectorAll('[data-date]').forEach(btn=>{const iso=btn.dataset.date,selected=iso===decisionDateFrom||decisionDateRanges.some(r=>iso===r.from||iso===r.to),savedRange=decisionDateRanges.some(r=>iso>r.from&&iso<r.to);btn.classList.toggle('selected',selected);btn.classList.toggle('in-range',savedRange);btn.classList.toggle('preview-range',!!previewStart&&iso>=previewStart&&iso<=previewEnd&&!selected);});}
 function renderDecisionDateLocks(){const lock=$('decisionDateLocks');if(!lock)return;lock.hidden=!decisionDateRanges.length;if(!decisionDateRanges.length){lock.innerHTML='';return;}lock.innerHTML=decisionDateRanges.map((r,i)=>`<span class="raw-filter-chip decision-date-chip"><span><span>${esc(decisionDateDisplay(r.from))}</span><span>${esc(decisionDateDisplay(r.to))}</span></span><button type="button" data-index="${i}" title="Rensa låst filter" aria-label="Rensa låst filter">×</button></span>`).join('');lock.querySelectorAll('button').forEach(btn=>btn.onclick=e=>{e.stopPropagation();decisionDateRanges.splice(Number(btn.dataset.index),1);resetDecisionPage();buildDecisionFilters();renderDecisionView();});}
 function resetDecisionDateRange(){decisionDateFrom='';decisionDateTo='';decisionDateRanges=[];decisionDateDraftFrom='';decisionDateHover='';resetDecisionPage();closeDecisionDatePicker();renderDecisionView();}
-function renderDecisionCalendar(){const host=$('decisionDateCalendar');if(!host)return;const dates=decisionAvailableDates(),min=dates[0]||'',max=dates[dates.length-1]||'';if(!decisionCalendarMonth)decisionCalendarMonth=decisionMonthKey(decisionDateFrom||decisionDateRanges[0]?.from||min||max);const [year,month]=decisionCalendarMonth.split('-').map(Number);if(!year||!month){host.innerHTML='<div class="date-calendar-hint">Inga datum tillgängliga.</div>';return;}const first=new Date(year,month-1,1),days=new Date(year,month,0).getDate(),start=(first.getDay()+6)%7,prev=decisionAddMonths(decisionCalendarMonth,-1),next=decisionAddMonths(decisionCalendarMonth,1),minMonth=decisionMonthKey(min),maxMonth=decisionMonthKey(max),weekdays=['M','T','O','T','F','L','S'];let cells=weekdays.map(d=>`<div class="date-calendar-weekday">${d}</div>`).join('');for(let i=0;i<start;i++)cells+='<span></span>';for(let day=1;day<=days;day++){const iso=`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;const disabled=(min&&iso<min)||(max&&iso>max),selected=iso===decisionDateFrom||decisionDateRanges.some(r=>iso===r.from||iso===r.to),inRange=decisionDateRanges.some(r=>iso>r.from&&iso<r.to);cells+=`<button type="button" class="date-calendar-day ${selected?'selected':''} ${inRange?'in-range':''}" data-date="${iso}" ${disabled?'disabled':''}>${day}</button>`;}host.hidden=!decisionDatePickerOpen;host.innerHTML=`<div class="date-calendar-head"><button type="button" class="secondary date-calendar-nav" data-nav="-1" ${minMonth&&prev<minMonth?'disabled':''}>‹</button><div class="date-calendar-title">${esc(decisionMonthLabel(decisionCalendarMonth))}</div><button type="button" class="secondary date-calendar-nav" data-nav="1" ${maxMonth&&next>maxMonth?'disabled':''}>›</button></div><div class="date-calendar-grid">${cells}</div><div class="date-calendar-footer"><div class="date-calendar-hint">${decisionDateDraftFrom?'Välj slutdatum.':'Välj start- och slutdatum.'}</div><button type="button" class="secondary date-calendar-reset" data-reset-date>Rensa datum</button></div>`;host.querySelectorAll('[data-nav]').forEach(btn=>btn.onclick=e=>{e.stopPropagation();decisionCalendarMonth=decisionAddMonths(decisionCalendarMonth,Number(btn.dataset.nav));renderDecisionCalendar();});host.querySelector('[data-reset-date]')?.addEventListener('click',e=>{e.stopPropagation();resetDecisionDateRange();});host.querySelectorAll('[data-date]').forEach(btn=>{btn.onclick=e=>{e.stopPropagation();selectDecisionCalendarDate(btn.dataset.date);};btn.onmouseenter=()=>{if(decisionDateDraftFrom){decisionDateHover=btn.dataset.date;updateDecisionCalendarPreview();}};});host.querySelector('.date-calendar-grid')?.addEventListener('mouseleave',()=>{if(decisionDateHover){decisionDateHover='';updateDecisionCalendarPreview();}});updateDecisionCalendarPreview();}
+function renderDecisionCalendar(){
+  const host=$('decisionDateCalendar');
+  if(!host)return;
+  const dates=decisionAvailableDates(),min=dates[0]||'',max=dates[dates.length-1]||'';
+  if(!decisionCalendarMonth)decisionCalendarMonth=decisionMonthKey(decisionDateFrom||decisionDateRanges[0]?.from||min||max);
+  const [year,month]=decisionCalendarMonth.split('-').map(Number);
+  if(!year||!month){host.innerHTML='<div class="date-calendar-hint">Inga datum tillgängliga.</div>';return;}
+  const first=new Date(year,month-1,1),days=new Date(year,month,0).getDate(),start=(first.getDay()+6)%7,prev=decisionAddMonths(decisionCalendarMonth,-1),next=decisionAddMonths(decisionCalendarMonth,1),minMonth=decisionMonthKey(min),maxMonth=decisionMonthKey(max),weekdays=['M','T','O','T','F','L','S'];
+  let cells=weekdays.map(d=>`<div class="date-calendar-weekday">${d}</div>`).join('');
+  for(let i=0;i<start;i++)cells+='<span></span>';
+  for(let day=1;day<=days;day++){
+    const iso=`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    const disabled=(min&&iso<min)||(max&&iso>max),selected=iso===decisionDateFrom||decisionDateRanges.some(r=>iso===r.from||iso===r.to),inRange=decisionDateRanges.some(r=>iso>r.from&&iso<r.to);
+    cells+=`<button type="button" class="date-calendar-day ${selected?'selected':''} ${inRange?'in-range':''}" data-date="${iso}" ${disabled?'disabled':''}>${day}</button>`;
+  }
+  host.hidden=!decisionDatePickerOpen;
+  host.innerHTML=`<div class="date-calendar-head"><button type="button" class="secondary date-calendar-nav" data-nav="-1" ${minMonth&&prev<minMonth?'disabled':''}>‹</button><div class="date-calendar-title">${decisionCalendarMonthSelectHtml(decisionCalendarMonth)}${decisionCalendarYearSelectHtml(min,max,decisionCalendarMonth)}</div><button type="button" class="secondary date-calendar-nav" data-nav="1" ${maxMonth&&next>maxMonth?'disabled':''}>›</button></div><div class="date-calendar-grid">${cells}</div><div class="date-calendar-footer"><div class="date-calendar-hint">${decisionDateDraftFrom?'Välj slutdatum.':'Välj start- och slutdatum.'}</div><button type="button" class="secondary date-calendar-reset" data-reset-date>Rensa datum</button></div>`;
+  host.querySelectorAll('[data-nav]').forEach(btn=>btn.onclick=e=>{e.stopPropagation();decisionCalendarMonth=decisionAddMonths(decisionCalendarMonth,Number(btn.dataset.nav));renderDecisionCalendar();});
+  const monthSelect=host.querySelector('.date-calendar-month'),yearSelect=host.querySelector('.date-calendar-year');
+  const setVisibleMonth=()=>{decisionCalendarMonth=`${yearSelect.value}-${monthSelect.value}`;renderDecisionCalendar();};
+  monthSelect?.addEventListener('change',e=>{e.stopPropagation();setVisibleMonth();});
+  yearSelect?.addEventListener('change',e=>{e.stopPropagation();setVisibleMonth();});
+  host.querySelector('[data-reset-date]')?.addEventListener('click',e=>{e.stopPropagation();resetDecisionDateRange();});
+  host.querySelectorAll('[data-date]').forEach(btn=>{btn.onclick=e=>{e.stopPropagation();selectDecisionCalendarDate(btn.dataset.date);};btn.onmouseenter=()=>{if(decisionDateDraftFrom){decisionDateHover=btn.dataset.date;updateDecisionCalendarPreview();}};});
+  host.querySelector('.date-calendar-grid')?.addEventListener('mouseleave',()=>{if(decisionDateHover){decisionDateHover='';updateDecisionCalendarPreview();}});
+  updateDecisionCalendarPreview();
+}
 function openDecisionDatePicker(){decisionDatePickerOpen=true;decisionCalendarMonth=decisionMonthKey(decisionDateFrom||decisionDateRanges[0]?.from||decisionAvailableDates()[0]||'');const cal=$('decisionDateCalendar');if(cal)cal.hidden=false;syncDecisionDateRangeControls();}
 function closeDecisionDatePicker(){decisionDatePickerOpen=false;decisionDateDraftFrom='';decisionDateHover='';const host=$('decisionDateCalendar');if(host)host.hidden=true;syncDecisionDateRangeControls();}
 function toggleDecisionDatePicker(){decisionDatePickerOpen?closeDecisionDatePicker():openDecisionDatePicker();}
@@ -94,7 +120,7 @@ function decisionPointCompare(a,b){const an=Number(a),bn=Number(b);if(Number.isF
 function decisionSortValue(row,col){if(['voteCount','yes','no','abstain','absent'].includes(col))return Number(row[col])||0;if(col==='result')return decisionDisplay('result',row.result);if(col==='title')return row.body||row.title||'';if(col==='pointTitle')return row.pointTitle||'';return row.date||'';}
 function decisionSortCompare(a,b,col=decisionSortColumn){const av=decisionSortValue(a,col),bv=decisionSortValue(b,col);let cmp=typeof av==='number'&&typeof bv==='number'?av-bv:String(av).localeCompare(String(bv),'sv',{numeric:true,sensitivity:'base'});if(cmp===0)cmp=String(a.date).localeCompare(String(b.date),'sv',{numeric:true})||String(a.body).localeCompare(String(b.body),'sv',{numeric:true,sensitivity:'base'})||String(a.title).localeCompare(String(b.title),'sv',{numeric:true,sensitivity:'base'})||decisionPointCompare(a.point,b.point)||a.docIndex-b.docIndex;return decisionSortDir==='desc'?-cmp:cmp;}
 function sortedDecisionPointRows(rows=filteredDecisionPointRows()){return [...rows].sort((a,b)=>decisionSortCompare(a,b));}
-function decisionSortIndicator(col){return decisionSortColumn===col?(decisionSortDir==='asc'?' ▲':' ▼'):'';}
+function decisionSortIndicator(col){return decisionSortColumn===col?(decisionSortDir==='asc'?' \u25b2':' \u25bc'):'';}
 function decisionSortableHeader(col,label){return `<th data-decision-sort="${esc(col)}" class="decision-sortable" role="button" tabindex="0" aria-sort="${decisionSortColumn===col?(decisionSortDir==='asc'?'ascending':'descending'):'none'}">${esc(label+decisionSortIndicator(col))}</th>`;}
 function setDecisionSort(col){if(decisionSortColumn===col)decisionSortDir=decisionSortDir==='asc'?'desc':'asc';else{decisionSortColumn=col;decisionSortDir=['voteCount','yes','no','abstain','absent'].includes(col)?'desc':'asc';}resetDecisionPage();renderDecisionView();}
 
@@ -216,6 +242,7 @@ ensureDecisionData=function(){
     row.matterId=String(meta.matter_id||doc.mi||'');
     row.sourcePage=Number(meta.source_page)||0;
     row.sourcePageEnd=Number(meta.source_page_end)||0;
+    row.sourceTop=Number(meta.source_top??meta.source_y??meta.target_top??meta.target_y);
     if(meta.source_url)row.sourceUrl=String(meta.source_url);
     if(meta.local_path)row.localPath=String(meta.local_path);
   });
@@ -433,21 +460,49 @@ decisionMasterSummaryCards=function(rows=filteredDecisionRows(),pointRows=filter
 renderDecisionDetailView=function(tab){decisionRenderDetailV1(tab);const proposal=decisionProposalRowByKey(tab.proposalKey),points=normalizeDecisionSelectionState(tab.sourcePoints).length?normalizeDecisionSelectionState(tab.sourcePoints):[tab.sourcePoint||tab.point].filter(Boolean),parties=selectedDecisionValues('decisionParty'),members=selectedDecisionValues('decisionMember'),votes=selectedDecisionValues('decisionVote'),positions=decisionPositionRows.filter(r=>r.id===tab.id&&(!points.length||points.includes(String(r.point)))&&(!parties.length||parties.includes(municipalNorm(r.party)))&&(!members.length||members.includes(decisionMemberKey(r.name,r.party)))&&(!votes.length||votes.includes(r.vote))),groups=new Map();positions.forEach(r=>{if(!groups.has(r.vote))groups.set(r.vote,[]);groups.get(r.vote).push(r);});if(groups.size){const html=`<article class="decision-point-card"><h3>Namngivna yrkanden</h3>${[...groups.entries()].map(([label,rows])=>`<section class="decision-vote-type"><h4>${esc(label)} <strong>${fmtInt(rows.length)}</strong></h4><div class="decision-point-party-list">${[...new Map(rows.map(r=>[r.party,rows.filter(x=>x.party===r.party)])).entries()].map(([party,partyRows])=>`<section class="decision-point-party"><h5>${esc(decisionDisplay('party',party))} · ${fmtInt(partyRows.length)}</h5><ul>${decisionVoteNames(partyRows)}</ul></section>`).join('')}</div></section>`).join('')}</article>`;$('decisionDetailGroups').insertAdjacentHTML('beforeend',html);}if(proposal?.decisionLevel==='recommendation_to_next_body')$('decisionDetailStatus').textContent='Beredande beslut eller rekommendation till nästa beslutande organ. '+$('decisionDetailStatus').textContent;};
 function decisionVoteVerification(rows,proposal){const events=Object.values(proposal?.voteEvents||{}),filtered=selectedDecisionValues('decisionParty').length||selectedDecisionValues('decisionMember').length||selectedDecisionValues('decisionVote').length,conflicts=events.filter(e=>e.count_conflict),unnamed=events.some(e=>['yes','no','abstain','absent'].some(v=>(Number(e[`stated_${v}`])||0)>(Number(e[`named_${v}`])||0)));return {filtered,conflicts,unnamed};}
 function renderDecisionDetailView(tab){const rows=decisionDetailRows(tab),decision=decisionDecisionRows.find(r=>r.id===tab.id);if(!decision){closeDecisionTab(decisionActiveTab);return;}const proposal=decisionProposalRowByKey(tab.proposalKey);$('decisionDetailTitle').textContent=proposal?.pointTitle||tab.title||decision.title;const source=proposal?.sourceUrl||decision.url||'';$('decisionDetailMeta').innerHTML=`<span>${esc([proposal?.body,decision.date,proposal?.diary].filter(Boolean).join(' · '))}</span>${source?` <a class="decision-official-link" href="${esc(source)}" target="_blank" rel="noopener noreferrer">Öppna källan</a>`:''}`;$('decisionDetailOverview').innerHTML=decisionDetailHierarchyHtml(decision,proposal,tab)+decisionDetailSummaryCards(rows,proposal);const verification=decisionVoteVerification(rows,proposal);$('decisionDetailStatus').textContent=verification.filtered?'Visar den filtrerade delmängden. Varje votering redovisas separat, först per rösttyp och därefter per parti och person.':verification.conflicts.length?'Källkonflikt finns i en eller flera voteringar. Namnlistan räknas exakt och avvikelsen mot protokollets tryckta totalsiffra redovisas öppet.':verification.unnamed?'Rösträkningen följer protokollet. Där protokollet endast anger ett antal utan namn redovisas detta uttryckligen.':'Kontrollerad rösträkning: namnlistor och protokollets totalsiffror stämmer för samtliga voteringar i denna beslutspunkt.';$('decisionPrev').disabled=true;$('decisionNext').disabled=true;$('decisionPage').textContent='';const pointGroups=decisionPointPartyGroups(rows,proposal);$('decisionDetailGroups').innerHTML=pointGroups.length?pointGroups.map((group,index)=>decisionPointPartyHtml(group,index,pointGroups.length)).join(''):'<div class="decision-vote-panel">Denna beslutspunkt saknar votering.</div>';$('decisionMasterPane').hidden=true;$('decisionDetailPane').hidden=false;}
-function renderDecisionView(){ensureDecisionData();renderDecisionPageSizeControls();buildDecisionFilters();renderDecisionTabs();renderDecisionActivityTabs();if(!decisionReady||!decisionAllPointRows.length){$('decisionOverview').innerHTML='';$('decisionHead').innerHTML='';$('decisionBody').innerHTML='';$('decisionStatus').textContent='Kommunala protokoll laddas eller saknas.';$('decisionPage').textContent='';$('decisionPrev').disabled=true;$('decisionNext').disabled=true;$('decisionMasterPane').hidden=false;$('decisionDetailPane').hidden=true;renderDecisionActivityView();return;}const tab=decisionActiveTabState();if(!tab||tab.kind==='list')renderDecisionMasterView();else renderDecisionDetailView(tab);renderDecisionActivityView(decisionActivityTabState()?.kind==='activity'?decisionActivityById(decisionActivityTabState().activityId):null);}
+function renderDecisionView(){ensureDecisionData();renderDecisionPageSizeControls();buildDecisionFilters();renderDecisionTabs();if(!decisionReady||!decisionAllPointRows.length){$('decisionOverview').innerHTML='';$('decisionHead').innerHTML='';$('decisionBody').innerHTML='';$('decisionStatus').textContent='Kommunala protokoll laddas eller saknas.';$('decisionPage').textContent='';$('decisionPrev').disabled=true;$('decisionNext').disabled=true;$('decisionMasterPane').hidden=false;$('decisionDetailPane').hidden=true;return;}const tab=decisionActiveTabState();if(!tab||tab.kind==='list')renderDecisionMasterView();else renderDecisionDetailView(tab);}
 function decisionSourceSearchText(row){
-  return municipalNorm(row?.description||row?.title||row?.pointTitle||'').slice(0,80);
+  return municipalNorm([
+    row?.protocolHeader,
+    row?.paragraph,
+    row?.pointTitle,
+    row?.description,
+    row?.title
+  ].filter(Boolean).find(text=>String(text).trim().length>=8)||'').slice(0,140);
+}
+function decisionPdfTopOffset(row){
+  const value=row?.sourceTop??row?.source_top??row?.sourceY??row?.source_y??row?.targetTop??row?.target_top;
+  const n=Number(value);
+  return Number.isFinite(n)&&n>=0?Math.round(n):null;
+}
+function decisionPdfPageNumber(row){
+  const page=Number(row?.sourcePage||row?.source_page||row?.page||row?.pageNumber||row?.page_number)||0;
+  return page>0?Math.round(page):0;
+}
+function decisionPdfFragmentParams(row){
+  const params=[],page=decisionPdfPageNumber(row),top=decisionPdfTopOffset(row),search=decisionSourceSearchText(row);
+  if(page)params.push(['page',String(page)]);
+  if(top!==null){
+    params.push(['zoom',`100,0,${top}`]);
+    params.push(['view',`FitH,${top}`]);
+  }else if(page){
+    params.push(['view','FitH,0']);
+  }
+  if(search)params.push(['search',search]);
+  return params.map(([key,value])=>`${encodeURIComponent(key)}=${encodeURIComponent(value)}`).join('&');
 }
 function decisionAnchoredSourceUrl(row, fallback=''){
   const raw=municipalNorm(row?.sourceUrl||row?.url||row?.localPath||fallback);
   if(!raw)return '';
   if(row?.isMeeting)return raw.split('#')[0];
-  const page=Number(row?.sourcePage)||0;
-  const search=decisionSourceSearchText(row);
-  if(!page&&!search)return raw;
-  const hash=[];
-  if(page)hash.push(`page=${encodeURIComponent(String(page))}`);
-  if(search)hash.push(`search=${encodeURIComponent(search)}`);
-  return raw.split('#')[0]+(hash.length?`#${hash.join('&')}`:'');
+  const hash=decisionPdfFragmentParams(row);
+  return raw.split('#')[0]+(hash?`#${hash}`:'');
+}
+function decisionActivitySourceUrl(row){
+  const raw=municipalNorm(row?.url||row?.localPath||'');
+  if(!raw)return '';
+  const hash=decisionPdfFragmentParams(row);
+  return raw.split('#')[0]+(hash?`#${hash}`:'');
 }
 function decisionSemanticLevelLabel(value){
   const labels={
@@ -540,10 +595,9 @@ renderDecisionDetailView=function(tab){
 function decisionPageSize(){return decisionPageSizeValue||250;}
 function setDecisionPageSize(size){decisionPageSizeValue=[100,250,500,1000,2500].includes(Number(size))?Number(size):250;renderDecisionPageSizeControls();resetDecisionPage();renderDecisionView();}
 function renderDecisionPageSizeControls(){const value=decisionPageSize();document.querySelectorAll('.decision-page-size-option').forEach(btn=>{const active=Number(btn.dataset.size)===value;btn.classList.toggle('active',active);btn.setAttribute('aria-pressed',active?'true':'false');});}
-function resetDecisionPage(){decisionTabs.forEach(t=>{t.page=0;});decisionActivityTabs.forEach(t=>{t.page=0;});}
+function resetDecisionPage(){decisionTabs.forEach(t=>{t.page=0;});if(typeof resetDecisionActivityPage==='function')resetDecisionActivityPage();}
 
 function selectedActivityValues(key){return normalizeDecisionSelectionState(decisionActivityFilters[key]);}
-const decisionActivityFilterClearValueFinal='__clear_activity_filter__';
 function decisionActivityTabState(){return decisionActivityTabs[Math.max(0,Math.min(decisionActivityActiveTab,decisionActivityTabs.length-1))];}
 function renderDecisionActivityTabs(){const box=$('decisionActivityTabs');if(!box)return;box.innerHTML=decisionActivityTabs.map((t,i)=>`<button class="decision-tab ${i===decisionActivityActiveTab?'active':''}" data-activity-i="${i}" type="button"><span class="decision-tab-label">${esc(t.title)}</span></button>`).join('');box.querySelectorAll('[data-activity-i]').forEach(btn=>btn.onclick=()=>{decisionActivityActiveTab=Number(btn.dataset.activityI);renderDecisionView();});}
 function decisionActivityTypeLabel(type){return municipalText(type)||'Övrigt';}
@@ -560,7 +614,7 @@ function filteredDecisionActivityRows(){const q=decisionActivitySearchQuery.trim
 function decisionActivitySortValue(row,col){if(col==='type')return decisionActivityTypeLabel(row.type);if(col==='questioner')return row.questioner||row.person||'';if(col==='addressedTo')return row.addressedTo||'';if(col==='answeredBy')return row.answeredBy||'';if(col==='party')return decisionDisplay('party',row.party);if(col==='status')return decisionActivityCombinedStatus(row)||row.organ||'';if(col==='title')return row.title||'';return row.date||'';}
 function decisionActivitySortCompare(a,b,col=decisionActivitySortColumn){let cmp=String(decisionActivitySortValue(a,col)).localeCompare(String(decisionActivitySortValue(b,col)),'sv',{numeric:true,sensitivity:'base'});if(cmp===0)cmp=String(a.date).localeCompare(String(b.date),'sv',{numeric:true})||String(a.title).localeCompare(String(b.title),'sv',{numeric:true,sensitivity:'base'});return decisionActivitySortDir==='desc'?-cmp:cmp;}
 function sortedDecisionActivityRows(rows=filteredDecisionActivityRows()){return [...rows].sort((a,b)=>decisionActivitySortCompare(a,b));}
-function decisionActivitySortIndicator(col){return decisionActivitySortColumn===col?(decisionActivitySortDir==='asc'?' ▲':' ▼'):'';}
+function decisionActivitySortIndicator(col){return decisionActivitySortColumn===col?(decisionActivitySortDir==='asc'?' \u25b2':' \u25bc'):'';}
 function decisionActivitySortableHeader(col,label){return `<th data-activity-sort="${esc(col)}" class="decision-sortable" role="button" tabindex="0">${esc(label+decisionActivitySortIndicator(col))}</th>`;}
 function setDecisionActivitySort(col){if(decisionActivitySortColumn===col)decisionActivitySortDir=decisionActivitySortDir==='asc'?'desc':'asc';else{decisionActivitySortColumn=col;decisionActivitySortDir='asc';}renderDecisionActivityView();}
 function decisionActivityById(id){return decisionActivityRows.find(r=>r.id===String(id||''))||null;}
@@ -568,7 +622,8 @@ function openDecisionActivityDetail(id){const row=decisionActivityById(id);if(!r
 function renderDecisionActivityDetail(row){$('decisionActivityListPane').hidden=true;$('decisionActivityDetailPane').hidden=false;$('decisionActivityDetailTitle').textContent=row.title||decisionActivityTypeLabel(row.type);$('decisionActivityDetailMeta').textContent=[row.date,decisionActivityTypeLabel(row.type),decisionActivityCombinedStatus(row)].filter(Boolean).join(' · ');$('decisionActivityDetailOverview').innerHTML=[['Dokumenttyp',decisionActivityTypeLabel(row.type)],['Status',decisionActivityCombinedStatus(row)||'—'],['Datum',row.date||'—'],['Organ',row.organ||'—']].map(([k,v])=>`<div class="card">${esc(k)}<b>${esc(String(v))}</b></div>`).join('');$('decisionActivityDetailBody').innerHTML=`<article class="decision-point-card"><h3>${esc(row.title||'Kommunalt ärende')}</h3><p>${esc(row.subtitle||'')}</p></article>`;}
 function renderDecisionActivityView(activeRow=null){const pane=$('decisionActivityPane');if(!pane)return;if(activeRow){renderDecisionActivityDetail(activeRow);return;}$('decisionActivityListPane').hidden=false;$('decisionActivityDetailPane').hidden=true;buildDecisionActivityFilters();const filteredRows=filteredDecisionActivityRows(),rows=sortedDecisionActivityRows(filteredRows);$('decisionActivityOverview').innerHTML=[['Rader',fmtInt(filteredRows.length)],['Underlag',fmtInt(filteredRows.filter(r=>r.type==='underlag').length)],['Remisser',fmtInt(filteredRows.filter(r=>r.type==='remiss').length)],['Övrigt',fmtInt(filteredRows.filter(r=>!['underlag','remiss'].includes(r.type)).length)]].map(([k,v])=>`<div class="card">${esc(k)}<b>${esc(String(v))}</b></div>`).join('');$('decisionActivityStatus').textContent=rows.length?`Visar ${fmtInt(rows.length)} kommunala rader i den andra huvudtabellen.`:'Den andra kommunala huvudtabellen är inte kopplad till data ännu.';$('decisionActivityHead').innerHTML=`<tr>${decisionActivitySortableHeader('date','Datum')}${decisionActivitySortableHeader('type','Dokumenttyp')}${decisionActivitySortableHeader('title','Titel/ämne')}${decisionActivitySortableHeader('questioner','Person/funktion')}${decisionActivitySortableHeader('addressedTo','Mottagare')}${decisionActivitySortableHeader('answeredBy','Ansvarig')}${decisionActivitySortableHeader('party','Organ')}${decisionActivitySortableHeader('status','Status')}<th>Källa</th></tr>`;$('decisionActivityHead').querySelectorAll('[data-activity-sort]').forEach(th=>{th.onclick=()=>setDecisionActivitySort(th.dataset.activitySort);});$('decisionActivityBody').innerHTML=rows.map(r=>`<tr class="decision-selectable-row" data-activity-id="${esc(r.id)}"><td>${decisionActivityDateHtml(r)}</td><td><strong class="decision-activity-type">${esc(decisionActivityTypeLabel(r.type))}</strong></td><td>${esc(r.title)}</td><td>${esc(r.questioner||'')}</td><td>${esc(r.addressedTo||'')}</td><td>${esc(r.answeredBy||'')}</td><td>${esc(decisionDisplay('party',r.party))}</td><td>${esc(decisionActivityCombinedStatus(r))}</td><td>${r.url?`<a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Öppna</a>`:'—'}</td></tr>`).join('');$('decisionActivityBody').querySelectorAll('[data-activity-id]').forEach(row=>row.onclick=e=>{if(e.target.closest('a'))return;openDecisionActivityDetail(row.dataset.activityId);});}
 
-async function exportDecisionXlsx(){ensureDecisionData();const active=decisionActiveTabState(),pointRows=sortedDecisionPointRows();if(!pointRows.length){$('decisionStatus').textContent='Det finns inga kommunala ärenden att exportera.';return;}const isDetail=active&&active.kind==='decision',rows=isDetail?[['Datum','Organ','Paragraf','Ärende','Namn','Roll/organ','Röst','Källa'],...decisionDetailRows(active).map(r=>[r.date,r.title,r.point,r.description,r.name,decisionDisplay('party',r.party),r.vote,r.url])]:[['Datum','Organ','Ärende','Status','Röster','Ja','Nej','Avstår','Frånvarande','Källa'],...pointRows.map(r=>[r.date,r.body,r.title,decisionPointResultLabel(r),r.voteCount,r.yes,r.no,r.abstain,r.absent,r.sourceUrl||r.url])];const files=[{name:'[Content_Types].xml',data:'<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>'},{name:'_rels/.rels',data:'<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'},{name:'xl/workbook.xml',data:'<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Örebro kommuns arbete" sheetId="1" r:id="rId1"/></sheets></workbook>'},{name:'xl/_rels/workbook.xml.rels',data:'<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'},{name:'xl/styles.xml',data:stylesXml()},{name:'xl/worksheets/sheet1.xml',data:sheetXml(rows)}];const blob=zip(files),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=isDetail?'kommunalt_arende.xlsx':'kommunens_protokollforda_beslut.xlsx';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
+async function exportDecisionXlsx(){ensureDecisionData();const active=decisionActiveTabState(),pointRows=sortedDecisionPointRows();if(!pointRows.length){$('decisionStatus').textContent='Det finns inga kommunala ärenden att exportera.';return;}const isDetail=active&&active.kind==='decision',rows=isDetail?[['Datum','Organ','Paragraf','Ärende','Namn','Roll/organ','Röst','Källa'],...decisionDetailRows(active).map(r=>[r.date,r.title,r.point,r.description,r.name,decisionDisplay('party',r.party),r.vote,r.url])]:[['Datum','Organ','Ärende','Status','Röster','Ja','Nej','Avstår','Frånvarande','Källa'],...pointRows.map(r=>[r.date,r.body,r.title,decisionPointResultLabel(r),r.voteCount,r.yes,r.no,r.abstain,r.absent,r.sourceUrl||r.url])];const files=[{name:'[Content_Types].xml',data:'<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>'},{name:'_rels/.rels',data:'<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'},{name:'xl/workbook.xml',data:'<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Örebro kommuns beslut" sheetId="1" r:id="rId1"/></sheets></workbook>'},{name:'xl/_rels/workbook.xml.rels',data:'<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'},{name:'xl/styles.xml',data:stylesXml()},{name:'xl/worksheets/sheet1.xml',data:sheetXml(rows)}];const blob=zip(files),a=document.createElement('a');a.download=isDetail?'kommunalt_arende.xlsx':'kommunens_protokollforda_beslut.xlsx';a.href=URL.createObjectURL(blob);a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
+async function exportDecisionActivityXlsx(){ensureDecisionData();buildDecisionActivityFilters();const rows=sortedDecisionActivityRows(filteredDecisionActivityRows());if(!rows.length){$('decisionActivityStatus').textContent='Det finns inga styrdokument att exportera.';return;}const sheetRows=[['Datum','Dokumenttyp','Titel','Sammanfattning','Viktiga punkter','Område/organ','Politisk nivå','Tjänstemannanivå','Diarienummer','Källa'],...rows.map(row=>[row.date||row.dateSort||'',decisionActivityTypeLabel(row.type),row.title||'',row.summary||'',(row.importantPoints||[]).join(' | '),row.party||'',row.politicalOwner||'',row.officialOwner||'',row.caseNumber||row.caseNumbersDetected?.[0]||'',decisionActivitySourceUrl(row)||''])];const files=[{name:'[Content_Types].xml',data:'<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>'},{name:'_rels/.rels',data:'<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'},{name:'xl/workbook.xml',data:'<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Styrdokument" sheetId="1" r:id="rId1"/></sheets></workbook>'},{name:'xl/_rels/workbook.xml.rels',data:'<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'},{name:'xl/styles.xml',data:stylesXml()},{name:'xl/worksheets/sheet1.xml',data:sheetXml(sheetRows)}];const blob=zip(files),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='orebro_kommuns_styrdokument.xlsx';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
 function decisionVoteEventBase(intressentId){const value=String(intressentId||'');return value.includes(':')?value.split(':').slice(0,-1).join(':'):value;}
 function decisionSplitVoteIds(value){return String(value||'').split(',').map(v=>v.trim()).filter(Boolean);}
 function decisionPreferNamedCount(named,stated){named=Number(named)||0;stated=Number(stated)||0;return stated||named;}
@@ -1325,8 +1380,27 @@ function decisionDecisionPointNumberFinal(row){
   if(point.startsWith(`${section}.`))return point.slice(section.length+1);
   return point&&point!==section?point:'';
 }
+function decisionValidDiaryNumberFinal(value){
+  const text=String(value||'').replace(/\s+/g,' ').trim();
+  if(!text||/[x]{1,}/i.test(text)||!/\d/.test(text))return '';
+  return text;
+}
+function decisionProtocolDiaryNumberFinal(row){
+  const pack=window.municipalProtocolDiaryPack||{};
+  const doc=(decisionPack?.d||[])[row?.docIndex]||{};
+  const candidates=[
+    row?.protocolDiary,
+    pack.byUrl?.[row?.sourceUrl],
+    pack.byUrl?.[row?.url],
+    pack.byUrl?.[doc.u],
+    pack.byTitle?.[row?.documentTitle],
+    pack.byTitle?.[doc.doc]
+  ];
+  return candidates.map(decisionValidDiaryNumberFinal).find(Boolean)||'';
+}
 function decisionMainCaseMetaHtmlFinal(row){
-  return row?.diary?`<small class="decision-point-note">Diarienummer: ${esc(row.diary)}</small>`:'';
+  const diary=row?.isMeeting?decisionProtocolDiaryNumberFinal(row):decisionValidDiaryNumberFinal(row?.diary);
+  return diary?`<small class="decision-point-note">Diarienummer: ${esc(diary)}</small>`:'';
 }
 municipalCaseCellHtml=function(row){
   const fallback=[row?.point?`§ ${row.point}`:'',municipalText(row?.title)||'Ärende'].filter(Boolean).join(' ');
@@ -1483,7 +1557,8 @@ function renderDecisionDocumentDetailFinal(row){
     ['Datum',row.date||'—'],
     ['Ansvarigt organ',row.organ||'—']
   ].map(([k,v])=>`<div class="card">${esc(k)}<b>${esc(String(v))}</b></div>`).join('');
-  $('decisionActivityDetailBody').innerHTML=`<article class="decision-point-card"><h3>${esc(row.title||'Styrdokument')}</h3>${row.subtitle?`<p>${esc(row.subtitle)}</p>`:''}${row.caseNumber?`<p><b>Diarienummer:</b> ${esc(row.caseNumber)}</p>`:''}${row.paragraph?`<p><b>Paragraf:</b> ${esc(row.paragraph)}</p>`:''}${row.url?`<p><a href="${esc(row.url)}" target="_blank" rel="noopener noreferrer">Öppna dokumentet</a></p>`:''}</article>`;
+  const source=decisionActivitySourceUrl(row);
+  $('decisionActivityDetailBody').innerHTML=`<article class="decision-point-card"><h3>${esc(row.title||'Styrdokument')}</h3>${row.subtitle?`<p>${esc(row.subtitle)}</p>`:''}${row.caseNumber?`<p><b>Diarienummer:</b> ${esc(row.caseNumber)}</p>`:''}${row.paragraph?`<p><b>Paragraf:</b> ${esc(row.paragraph)}</p>`:''}${source?`<p><a href="${esc(source)}" target="_blank" rel="noopener noreferrer">Öppna dokumentet</a></p>`:''}</article>`;
 }
 renderDecisionActivityDetail=renderDecisionDocumentDetailFinal;
 renderDecisionActivityView=function(activeRow=null){
@@ -1505,19 +1580,79 @@ renderDecisionActivityView=function(activeRow=null){
   $('decisionActivityStatus').textContent=rows.length?`Visar ${fmtInt(rows.length)} styrdokument.`:'Inga styrdokument är inlästa i databasen ännu.';
   $('decisionActivityHead').innerHTML=`<tr>${decisionActivitySortableHeader('date','Datum')}${decisionActivitySortableHeader('type','Dokumenttyp')}${decisionActivitySortableHeader('title','Titel')}${decisionActivitySortableHeader('questioner','Ägare')}${decisionActivitySortableHeader('addressedTo','Diarienummer')}${decisionActivitySortableHeader('answeredBy','Ansvarig')}${decisionActivitySortableHeader('party','Organ')}${decisionActivitySortableHeader('status','Status')}<th>Källa</th></tr>`;
   $('decisionActivityHead').querySelectorAll('[data-activity-sort]').forEach(th=>{th.onclick=()=>setDecisionActivitySort(th.dataset.activitySort);});
-  $('decisionActivityBody').innerHTML=rows.map(r=>`<tr class="decision-selectable-row" data-activity-id="${esc(r.id)}"><td>${decisionActivityDateHtml(r)}</td><td><strong class="decision-activity-type">${esc(decisionActivityTypeLabel(r.type))}</strong></td><td>${esc(r.title)}</td><td>${esc(r.questioner||'')}</td><td>${esc(r.addressedTo||'')}</td><td>${esc(r.answeredBy||'')}</td><td>${esc(r.party||'')}</td><td>${esc(decisionActivityCombinedStatus(r))}</td><td>${r.url?`<a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Öppna</a>`:'—'}</td></tr>`).join('');
+  $('decisionActivityBody').innerHTML=rows.map(r=>{const source=decisionActivitySourceUrl(r);return `<tr class="decision-selectable-row" data-activity-id="${esc(r.id)}"><td>${decisionActivityDateHtml(r)}</td><td><strong class="decision-activity-type">${esc(decisionActivityTypeLabel(r.type))}</strong></td><td>${esc(r.title)}</td><td>${esc(r.questioner||'')}</td><td>${esc(r.addressedTo||'')}</td><td>${esc(r.answeredBy||'')}</td><td>${esc(r.party||'')}</td><td>${esc(decisionActivityCombinedStatus(r))}</td><td>${source?`<a href="${esc(source)}" target="_blank" rel="noopener noreferrer">Öppna</a>`:'—'}</td></tr>`;}).join('');
   $('decisionActivityBody').querySelectorAll('[data-activity-id]').forEach(row=>row.onclick=e=>{if(e.target.closest('a'))return;openDecisionActivityDetail(row.dataset.activityId);});
 };
 
 /* Canonical participant identities for the member filter. Protocol OCR sometimes
    emits a surname only or a replacement note instead of a person's full name. */
 let decisionPersonIndex=null;
+let decisionAutoPersonAliases=null;
 function decisionPersonCleanName(value){
   const name=municipalPersonName(value).replace(/[\u2010\u2011\u2013\u2014]/g,'-').replace(/\s+/g,' ').trim();
   if(/^(?:ersätter|ersättare för|tjänstgör för|frånvarande)\b/i.test(name))return '';
   return name.replace(/^(?:jäv|ordförande)\s+/i,'').replace(/\s*,\s*politisk\s+sekreterare\s*$/i,'').trim();
 }
 function decisionPersonNorm(value){return decisionPersonCleanName(value).toLowerCase().replace(/-/g,' ').replace(/\s+/g,' ').trim();}
+function decisionPersonFold(value){
+  return decisionPersonNorm(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g,'')
+    .replace(/[øØ]/g,'o')
+    .replace(/[æÆ]/g,'ae')
+    .replace(/[^a-z0-9 ]/g,'')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+function decisionPersonEditDistanceOneOrLess(a,b){
+  if(a===b)return true;
+  if(Math.abs(a.length-b.length)>1)return false;
+  let i=0,j=0,diff=0;
+  while(i<a.length&&j<b.length){
+    if(a[i]===b[j]){i++;j++;continue;}
+    diff++;
+    if(diff>1)return false;
+    if(a.length===b.length){i++;j++;}
+    else if(a.length>b.length)i++;
+    else j++;
+  }
+  return diff+(i<a.length?1:0)+(j<b.length?1:0)<=1;
+}
+function decisionPersonPreferredName(a,b){
+  const rank=name=>[
+    /[ÃƒÅÄÖåäöéèüçøæ]/.test(name)?1:0,
+    String(name||'').includes('-')?1:0,
+    String(name||'').length
+  ];
+  const ar=rank(a),br=rank(b);
+  for(let i=0;i<ar.length;i++)if(ar[i]!==br[i])return ar[i]>br[i]?a:b;
+  return String(a).localeCompare(String(b),'sv',{sensitivity:'base'})<=0?a:b;
+}
+function decisionBuildAutoPersonAliases(records){
+  const byParty=new Map(),aliases=new Map();
+  records.forEach(record=>{
+    if(!record.party||!record.name||!record.fold||record.fold.split(' ').length<2)return;
+    if(!byParty.has(record.party))byParty.set(record.party,new Map());
+    const names=byParty.get(record.party);
+    if(!names.has(record.fold))names.set(record.fold,{...record,count:0});
+    names.get(record.fold).count++;
+  });
+  byParty.forEach((names,party)=>{
+    const recordsForParty=[...names.values()];
+    for(let i=0;i<recordsForParty.length;i++){
+      for(let j=i+1;j<recordsForParty.length;j++){
+        const left=recordsForParty[i],right=recordsForParty[j];
+        if(!decisionPersonEditDistanceOneOrLess(left.fold,right.fold))continue;
+        const canonical=left.count!==right.count
+          ? (left.count>right.count?left.name:right.name)
+          : decisionPersonPreferredName(left.name,right.name);
+        aliases.set(`${party}|${left.fold}`,canonical);
+        aliases.set(`${party}|${right.fold}`,canonical);
+      }
+    }
+  });
+  return aliases;
+}
 /* Reviewed source spelling/transcription variants. These aliases have the same
    party and committee context; they are not general fuzzy name matching. */
 const decisionPersonAliases=new Map([
@@ -1526,15 +1661,29 @@ const decisionPersonAliases=new Map([
   ['SD','Carola Suneson','Carola Sunesson'],['V','Christian Rehn Janowicz','Cristian Rehn Janowicz'],['M','Peter Westberg','Peter Vestberg'],['V','Margareta Frazén','Margareta Franzén'],['C','Margareta Ekström','Margaretha Ekström'],
   ['S','Ann-Mari Wulfstrand-Byhlin','Ann-Marie Wulfstrand Byhlin'],['L','Berith Tedsjö-Winkler','Berith Winkler Tedsjö'],['S','Alexander Kjellgren','Aleksander Kjellgren'],['C','Tina Fingal Swens','Tina Fingal']
 ].map(([party,alias,canonical])=>[`${municipalNorm(party)}|${decisionPersonNorm(alias)}`,canonical]));
-function decisionPersonCanonicalName(value,party){const clean=decisionPersonCleanName(value);return decisionPersonAliases.get(`${municipalNorm(party)}|${decisionPersonNorm(clean)}`)||clean;}
+function decisionPersonCanonicalName(value,party){
+  const clean=decisionPersonCleanName(value),partyKey=municipalNorm(party);
+  return decisionPersonAliases.get(`${partyKey}|${decisionPersonNorm(clean)}`)||decisionAutoPersonAliases?.get(`${partyKey}|${decisionPersonFold(clean)}`)||clean;
+}
 function decisionPersonIdentity(value){const tokens=decisionPersonNorm(value).split(' ').filter(Boolean);return tokens.length>1?`${tokens[0]}|${tokens.at(-1)}`:'';}
 function decisionBuildPersonIndex(){
   if(decisionPersonIndex||!decisionPack)return;
   const records=[];
-  const add=(name,party,body)=>{const clean=decisionPersonCanonicalName(name,party);if(clean)records.push({name:clean,party:municipalNorm(party),body:municipalNorm(body),norm:decisionPersonNorm(clean),identity:decisionPersonIdentity(clean)});};
+  const add=(name,party,body)=>{
+    const partyKey=municipalNorm(party);
+    const clean=decisionPersonAliases.get(`${partyKey}|${decisionPersonNorm(name)}`)||decisionPersonCleanName(name);
+    if(clean)records.push({name:clean,party:partyKey,body:municipalNorm(body),norm:decisionPersonNorm(clean),fold:decisionPersonFold(clean),identity:decisionPersonIdentity(clean)});
+  };
   for(let index=0;index<(decisionPack.mr||[]).length;index+=6)add(decisionPack.mr[index+3],decisionPack.mr[index+4],decisionPack.mr[index+1]);
   for(let index=0;index<(decisionPack.r||[]).length;index+=6){const doc=(decisionPack.d||[])[Number(decisionPack.r[index])]||{};add(decisionPack.r[index+2],decisionPack.r[index+3],doc.b);}
   for(let index=0;index<(decisionPack.pr||[]).length;index+=6){const doc=(decisionPack.d||[])[Number(decisionPack.pr[index])]||{};add(decisionPack.pr[index+2],decisionPack.pr[index+3],doc.b);}
+  decisionAutoPersonAliases=decisionBuildAutoPersonAliases(records);
+  records.forEach(record=>{
+    record.name=decisionPersonCanonicalName(record.name,record.party);
+    record.norm=decisionPersonNorm(record.name);
+    record.fold=decisionPersonFold(record.name);
+    record.identity=decisionPersonIdentity(record.name);
+  });
   const canonical=new Map();
   const byPartySurname=new Map(),byContextSurname=new Map();
   const addCandidate=(index,key,identity)=>{if(!index.has(key))index.set(key,new Set());index.get(key).add(identity);};
@@ -1617,7 +1766,7 @@ function decisionReconcileFinalResults(){
     if(!finalLine)return;
     const isRejection=/\b(?:avslag|avslås|beviljas inte|utan bifall)\b/i.test(finalLine);
     const hasExplicitGrant=/\b(?:beviljas?|bifall|bevilja)\b/i.test(finalLine);
-    const hasAmount=/\b\d[\d\s ]*\s*(?:kr(?:onor)?|tkr)\b/i.test(finalLine);
+    const hasAmount=/\b\d[\d\s ]*\s*(?:kr(?:onor)?|tkr)\b/i.test(finalLine);
     const doc=(decisionPack?.d||[])[row.docIndex]||{};
     const grantLines=String(doc.bd||'').match(/^\s*\d+\.\s+.*\bbeviljas?\b/gim)||[];
     const impliedGrant=row.result==='reject'&&!isRejection&&!hasExplicitGrant&&hasAmount&&grantLines.length>=2;
@@ -1680,8 +1829,14 @@ function decisionMeetingKey(date,body){
   const canonical=typeof decisionOrganCanonicalFinal==='function'?decisionOrganCanonicalFinal(body):municipalNorm(body);
   return `${municipalText(date)}|${canonical}`;
 }
+function decisionMeetingProtocolKey(row){
+  return `${decisionMeetingKey(row?.date,row?.body)}|${municipalText(row?.documentTitle||row?.sourceUrl||row?.url||row?.docIndex)}`;
+}
 function decisionMeetingRowFor(row){
-  return decisionAllPointRows.find(candidate=>candidate.isMeeting&&candidate.meetingKey===decisionMeetingKey(row?.date,row?.body))||null;
+  const protocolKey=decisionMeetingProtocolKey(row);
+  return decisionAllPointRows.find(candidate=>candidate.isMeeting&&candidate.meetingKey===protocolKey)||
+    decisionAllPointRows.find(candidate=>candidate.isMeeting&&candidate.meetingKey===decisionMeetingKey(row?.date,row?.body))||
+    null;
 }
 const renderDecisionDetailViewBeforeMeetingLink=renderDecisionDetailView;
 renderDecisionDetailView=function(tab){
@@ -1723,7 +1878,7 @@ ensureDecisionData=function(){
   const byMeeting=new Map();
   decisionAllPointRows.forEach(row=>{
     if(row.isMeeting||!row.attendanceKey)return;
-    const key=decisionMeetingKey(row.date,row.body);
+    const key=decisionMeetingProtocolKey(row);
     if(!byMeeting.has(key))byMeeting.set(key,{key,rows:[],attendanceKeys:new Set()});
     const meeting=byMeeting.get(key);
     meeting.rows.push(row);
@@ -1741,6 +1896,7 @@ ensureDecisionData=function(){
     const meetingPoint=`sammantrade:${meeting.key}`;
     const meetingLabel=[row.body,row.date].filter(Boolean).join(' · ');
     const decisionKeys=new Set(meeting.rows.map(item=>`${item.matterId||item.id}|${item.point}`));
+    const protocolDiary=decisionProtocolDiaryNumberFinal(row);
     decisionAllPointRows.push({
       ...row,
       point:meetingPoint,
@@ -1753,6 +1909,8 @@ ensureDecisionData=function(){
       proposalType:'Sammanträden',
       result:'beslut',
       sourceUrl:row.url||row.sourceUrl||'',
+      diary:protocolDiary,
+      protocolDiary,
       voteId:'',
       voteIds:[],
       voteEvents:{},
@@ -1805,6 +1963,7 @@ renderDecisionDetailView=function(tab){
     return;
   }
   const source=decisionProtocolFirstPageUrlFinal(meeting);
+  const protocolDiary=decisionProtocolDiaryNumberFinal(meeting);
   $('decisionDetailTitle').textContent=`Sammanträde · ${meeting.body} · ${meeting.date}`;
   $('decisionDetailMeta').innerHTML=`<span>${esc(meeting.documentTitle||'Protokoll')}</span>${source?` <a class="decision-official-link" href="${esc(source)}" target="_blank" rel="noopener noreferrer">Öppna hela protokollet</a>`:''}`;
   $('decisionDetailOverview').innerHTML=[
@@ -2221,7 +2380,6 @@ function selectDecisionActivityCalendarDate(date){
   closeDecisionActivityDatePicker();
   renderDecisionView();
 }
-let municipalDocumentActivityRowsEnrichedCache=null;
 function municipalDocumentActivityRowsEnrichedFinal(){
   if(municipalDocumentActivityRowsEnrichedCache)return municipalDocumentActivityRowsEnrichedCache;
   const rows=window.municipalDocumentPack?.d||documentPack?.d||[];
@@ -2327,7 +2485,7 @@ function renderDecisionDocumentDetailFinal(row){
   $('decisionActivityListPane').hidden=true;
   $('decisionActivityDetailPane').hidden=false;
   $('decisionActivityDetailTitle').textContent=row.title||'Styrdokument';
-  const source=row.url||'';
+  const source=decisionActivitySourceUrl(row);
   $('decisionActivityDetailMeta').innerHTML=`<span>${esc([row.type,row.party].filter(Boolean).join(' · '))}</span>${source?` <a class="decision-official-link" href="${esc(source)}" target="_blank" rel="noopener noreferrer">Öppna källan</a>`:''}`;
   $('decisionActivityDetailOverview').innerHTML=[
     ['Dokumenttyp',row.type||'Dokument'],
@@ -2335,7 +2493,7 @@ function renderDecisionDocumentDetailFinal(row){
     ['Sidor',row.pageCount||'—'],
     ['Text',row.textStats?.has_extracted_text===false?'Saknas':row.textStats?.word_count?`${fmtInt(row.textStats.word_count)} ord`:'—']
   ].map(([k,v])=>`<div class="card"><span>${esc(k)}</span><b>${esc(String(v))}</b></div>`).join('');
-  const sourceLinks=[row.url?`<a href="${esc(row.url)}" target="_blank" rel="noopener noreferrer">Öppna hos Örebro kommun</a>`:'',row.localPath?`<span>${esc(row.localPath)}</span>`:''].filter(Boolean).join('<br>');
+  const sourceLinks=[source?`<a href="${esc(source)}" target="_blank" rel="noopener noreferrer">Öppna hos Örebro kommun</a>`:'',row.localPath?`<span>${esc(row.localPath)}</span>`:''].filter(Boolean).join('<br>');
   $('decisionActivityDetailBody').innerHTML=[
     `<article class="decision-point-card document-detail-summary"><h3>Sammanfattning</h3><p>${esc(row.summary||'Sammanfattning saknas.')}</p></article>`,
     `<article class="decision-point-card"><h3>Viktigaste punkter</h3>${decisionDocumentDetailListFinal(row.importantPoints||[])}</article>`,
@@ -2366,7 +2524,7 @@ renderDecisionActivityView=function(activeRow=null){
   $('decisionActivityStatus').textContent=rows.length?`Visar ${fmtInt(rows.length)} styrdokument.`:'Inga styrdokument matchar de aktiva filtren.';
   $('decisionActivityHead').innerHTML=`<tr>${decisionActivitySortableHeader('date','Datum')}${decisionActivitySortableHeader('type','Dokumenttyp')}${decisionActivitySortableHeader('title','Titel')}${decisionActivitySortableHeader('summary','Sammanfattning')}${decisionActivitySortableHeader('points','Viktigt')}${decisionActivitySortableHeader('party','Område/organ')}<th>Källa</th></tr>`;
   $('decisionActivityHead').querySelectorAll('[data-activity-sort]').forEach(th=>{th.onclick=()=>setDecisionActivitySort(th.dataset.activitySort);});
-  $('decisionActivityBody').innerHTML=rows.map(r=>`<tr class="decision-selectable-row" data-activity-id="${esc(r.id)}"><td>${decisionActivityDateHtml(r)}</td><td><strong class="decision-activity-type">${esc(decisionActivityTypeLabel(r.type))}</strong></td><td><strong>${esc(r.title)}</strong></td><td>${decisionDocumentSummaryCellFinal(r)}</td><td>${decisionDocumentPointsPreviewFinal(r)}</td><td>${esc(r.party||'')}</td><td>${r.url?`<a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Öppna</a>`:'—'}</td></tr>`).join('');
+  $('decisionActivityBody').innerHTML=rows.map(r=>{const source=decisionActivitySourceUrl(r);return `<tr class="decision-selectable-row" data-activity-id="${esc(r.id)}"><td>${decisionActivityDateHtml(r)}</td><td><strong class="decision-activity-type">${esc(decisionActivityTypeLabel(r.type))}</strong></td><td><strong>${esc(r.title)}</strong></td><td>${decisionDocumentSummaryCellFinal(r)}</td><td>${decisionDocumentPointsPreviewFinal(r)}</td><td>${esc(r.party||'')}</td><td>${source?`<a href="${esc(source)}" target="_blank" rel="noopener noreferrer">Öppna</a>`:'—'}</td></tr>`;}).join('');
   $('decisionActivityBody').querySelectorAll('[data-activity-id]').forEach(row=>row.onclick=e=>{if(e.target.closest('a'))return;openDecisionActivityDetail(row.dataset.activityId);});
 };
 
@@ -2448,6 +2606,136 @@ renderDecisionDetailView=function(tab){
 /* Final canonical vote totals.
    Unfiltered views use official protocol totals from pm/ve. Filtered views may
    use named rows because they intentionally show a subset. */
+function decisionInferredVoteNormalizeFinal(value){
+  return String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
+}
+function decisionInferredVoteCleanFinal(value){
+  return String(value||'').replace(/\s+/g,' ').replace(/\s+-\s*/g,'-').trim();
+}
+function decisionInferredVoteMeaningFinal(value){
+  const text=decisionInferredVoteCleanFinal(value);
+  return /^(?:bifall|avslag)\b/i.test(text)?text:`bifall till ${text}`;
+}
+function decisionInferredVotePeopleFinal(value){
+  const people=[];
+  const text=decisionInferredVoteCleanFinal(value);
+  const re=/([^,;.]+?)\s*\(([A-Za-z\u00c5\u00c4\u00d6\u00e5\u00e4\u00f6]+)\)/g;
+  let match;
+  while((match=re.exec(text))){
+    const name=decisionInferredVoteCleanFinal(match[1]).replace(/^och\s+/i,'');
+    const party=decisionInferredVoteCleanFinal(match[2]);
+    if(name&&party)people.push({name,party});
+  }
+  return people;
+}
+function decisionInferredVotePointFinal(doc,textBefore){
+  const matches=[...String(textBefore||'').matchAll(/beslutspunkt\s+(\d+)/gi)];
+  const pointNumber=matches.length?matches[matches.length-1][1]:'';
+  if(pointNumber&&doc?.p?.[`${decisionDecisionPointNumberFinal({point:Object.keys(doc.p||{})[0]||''})||String(Object.keys(doc.p||{})[0]||'').split('.')[0]}.${pointNumber}`]){
+    const base=String(Object.keys(doc.p||{})[0]||'').split('.')[0];
+    return `${base}.${pointNumber}`;
+  }
+  if(pointNumber){
+    const direct=Object.keys(doc?.p||{}).find(point=>String(point).endsWith(`.${pointNumber}`)||String(point)===pointNumber);
+    if(direct)return direct;
+  }
+  const points=Object.keys(doc?.p||{});
+  return points.length===1?points[0]:'';
+}
+function decisionInferredVoteEventsFromTextFinal(doc){
+  const text=String(doc?.pd||'');
+  if(!text||!decisionInferredVoteNormalizeFinal(text).includes('votering begars och verkstalls'))return [];
+  const markerRe=/votering\s+beg(?:\u00e4|a)r(?:s|des)?\s+och\s+verkst(?:\u00e4|a)ll(?:s|des)?\s*\.?/gi;
+  const markers=[...text.matchAll(markerRe)];
+  const events=[];
+  markers.forEach((marker,index)=>{
+    const section=text.slice(marker.index,(markers[index+1]?.index)??text.length);
+    const before=text.slice(Math.max(0,marker.index-2400),marker.index);
+    const point=decisionInferredVotePointFinal(doc,before);
+    if(!point||doc?.v?.[point])return;
+    const meaning=section.match(/Ja-r(?:\u00f6|o)st\s+inneb(?:\u00e4|a)r\s+(.+?)\.\s*Nej-?\s*r(?:\u00f6|o)st\s+inneb(?:\u00e4|a)r\s+(.+?)\./is);
+    const names=section.match(/Ja-r(?:\u00f6|o)ster\s+l(?:\u00e4|a)mnas\s+av\s+(.+?)\.\s*Nej-r(?:\u00f6|o)ster\s+l(?:\u00e4|a)mnas\s+av\s+(.+?)(?:\.|\nOrdf(?:\u00f6|o)rande)/is);
+    const result=section.match(/resultatet\s+(\d+)\s+ja-r(?:\u00f6|o)ster\s+och\s+(\d+)\s+nej-r(?:\u00f6|o)ster/i);
+    if(!meaning||!names||!result)return;
+    const yesPeople=decisionInferredVotePeopleFinal(names[1]);
+    const noPeople=decisionInferredVotePeopleFinal(names[2]);
+    const statedYes=Number(result[1])||0,statedNo=Number(result[2])||0;
+    if(!statedYes||!statedNo||yesPeople.length!==statedYes||noPeople.length!==statedNo)return;
+    events.push({
+      point,
+      eventId:`vote_${String(doc.i||'doc').replace(/[^\w]+/g,'_')}_${String(point).replace(/[^\w]+/g,'_')}_inferred_${events.length+1}`,
+      yesMeaning:decisionInferredVoteMeaningFinal(meaning[1]),
+      noMeaning:decisionInferredVoteMeaningFinal(meaning[2]),
+      statedYes,
+      statedNo,
+      yesPeople,
+      noPeople
+    });
+  });
+  return events;
+}
+function decisionApplyInferredParagraphVotesFinal(){
+  if(!decisionReady||!decisionPack?.d||decisionPack._inferredParagraphVotesReady)return;
+  const docs=decisionPack.d||[],existingRows=new Set(decisionRows.map(row=>String(row.intressentId||'')));
+  docs.forEach((doc,docIndex)=>{
+    const inferred=decisionInferredVoteEventsFromTextFinal(doc);
+    if(!inferred.length)return;
+    doc.v=doc.v||{};
+    doc.ve=doc.ve||{};
+    inferred.forEach(event=>{
+      if(doc.v[event.point]||doc.ve[event.eventId])return;
+      doc.v[event.point]=event.eventId;
+      doc.ve[event.eventId]={
+        points:[event.point],
+        source_kind:'formal_vote',
+        vote_type:'roll_call',
+        yes_meaning:event.yesMeaning,
+        no_meaning:event.noMeaning,
+        stated_yes:event.statedYes,
+        stated_no:event.statedNo,
+        stated_abstain:0,
+        stated_absent:0,
+        vote_status:'held_roll_call',
+        tally_status:'stated',
+        inferred_from:'paragraph_vote_marker'
+      };
+      const addPerson=(person,vote,order)=>{
+        const intressentId=`${event.eventId}:${order}`;
+        if(existingRows.has(intressentId))return;
+        existingRows.add(intressentId);
+        decisionRows.push({
+          docIndex,
+          id:String(doc.i||`d${docIndex}`),
+          date:String(doc.dt||''),
+          title:String(doc.t||''),
+          point:String(event.point),
+          description:decisionPointLabel(doc,event.point),
+          proposalType:decisionProposalTypeForPoint(doc,event.point),
+          name:person.name,
+          party:person.party,
+          vote,
+          intressentId,
+          url:String(doc.u||doc.lp||''),
+          body:String(doc.b||''),
+          documentTitle:String(doc.doc||''),
+          attendanceKey:decisionAttendanceKey(doc.dt,doc.b,doc.doc),
+          order:decisionRows.length
+        });
+      };
+      event.yesPeople.forEach((person,index)=>addPerson(person,'Ja',`yes_${index+1}`));
+      event.noPeople.forEach((person,index)=>addPerson(person,'Nej',`no_${index+1}`));
+    });
+  });
+  decisionAllPointRows.forEach(row=>{
+    const doc=docs[row.docIndex]||{},point=String(row.point||''),voteId=String(doc.v?.[point]||'');
+    if(!voteId)return;
+    const voteIds=decisionSplitVoteIds(voteId);
+    row.voteId=voteId;
+    row.voteIds=voteIds;
+    row.voteEvents=Object.fromEntries(voteIds.map(eventId=>[eventId,doc.ve?.[eventId]||{}]));
+  });
+  decisionPack._inferredParagraphVotesReady=true;
+}
 function decisionCanonicalVoteTotalsForRowFinal(row){
   const doc=(decisionPack?.d||[])[row?.docIndex]||{};
   const point=String(row?.point||'');
@@ -2497,6 +2785,7 @@ const ensureDecisionDataBeforeCanonicalVoteTotalsFinal=ensureDecisionData;
 ensureDecisionData=function(){
   ensureDecisionDataBeforeCanonicalVoteTotalsFinal();
   if(!decisionReady)return;
+  decisionApplyInferredParagraphVotesFinal();
   decisionAllPointRows.forEach(decisionApplyCanonicalVoteTotalsFinal);
 };
 
@@ -2579,7 +2868,11 @@ function decisionDetailCanonicalStatusFinal(rows=[],proposal=null){
   const filtered=decisionVotesAreFiltered();
   if(filtered)return 'Visar en filtrerad delmängd. Officiella totalsiffror i korten ovan gäller den filtrerade vyn när person-, parti- eller röstfilter är aktivt.';
   const verification=decisionVoteVerification(rows,proposal);
-  if(verification.conflicts.length)return 'Källkonflikt finns i en eller flera voteringar. Officiella totalsiffror visas från protokollets votering; namnlistan visas som detaljevidens.';
+  if(verification.conflicts.length){
+    const reconciled=verification.conflicts.filter(event=>event.count_reconciled_from_named_list).length;
+    if(reconciled===verification.conflicts.length)return 'Källkonflikt finns i en eller flera voteringar. Protokollets tryckta totalsiffra motsäger den uttryckliga namnlistan; namnlistans kontrollerade summering visas.';
+    return 'Källkonflikt finns i en eller flera voteringar. Officiella totalsiffror visas från protokollets votering; namnlistan visas som detaljevidens.';
+  }
   if(verification.unnamed)return 'Rösträkningen följer protokollets officiella totalsiffror. Om färre personer visas än totalsiffran anger protokollet inte alla namn i den maskinlästa namnlistan.';
   return rows.length?'Rösträkningen följer protokollets officiella totalsiffror och de namngivna rösterna visas per parti och person.':'Beslutspunkten saknar formell votering i datan; status och utfall baseras på protokollets beslutstext.';
 }
@@ -2777,7 +3070,7 @@ function decisionBindInfiniteScrollFinal(bodyId,onMore){
 }
 function resetDecisionPage(){
   decisionTabs.forEach(t=>{t.page=0;});
-  decisionActivityTabs.forEach(t=>{t.page=0;});
+  if(typeof resetDecisionActivityPage==='function')resetDecisionActivityPage();
 }
 renderDecisionMasterView=function(){
   decisionBindInfiniteScrollFinal('decisionBody',()=>{
@@ -2828,8 +3121,103 @@ renderDecisionActivityView=function(activeRow=null){
   $('decisionActivityStatus').textContent=rows.length?`Visar ${fmtInt(visibleRows.length)} av ${fmtInt(rows.length)} styrdokument. Scrolla för att läsa in fler.`:'Inga styrdokument matchar de aktiva filtren.';
   $('decisionActivityHead').innerHTML=`<tr>${decisionActivitySortableHeader('date','Datum')}${decisionActivitySortableHeader('type','Dokumenttyp')}${decisionActivitySortableHeader('title','Titel')}${decisionActivitySortableHeader('summary','Sammanfattning')}${decisionActivitySortableHeader('points','Viktigt')}${decisionActivitySortableHeader('party','Område/organ')}<th>Källa</th></tr>`;
   $('decisionActivityHead').querySelectorAll('[data-activity-sort]').forEach(th=>{th.onclick=()=>setDecisionActivitySort(th.dataset.activitySort);});
-  $('decisionActivityBody').innerHTML=visibleRows.map(r=>`<tr class="decision-selectable-row" data-activity-id="${esc(r.id)}"><td>${decisionActivityDateHtml(r)}</td><td><strong class="decision-activity-type">${esc(decisionActivityTypeLabel(r.type))}</strong></td><td><strong>${esc(r.title)}</strong></td><td>${decisionDocumentSummaryCellFinal(r)}</td><td>${decisionDocumentPointsPreviewFinal(r)}</td><td>${esc(r.party||'')}</td><td>${r.url?`<a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Öppna</a>`:'—'}</td></tr>`).join('');
+  $('decisionActivityBody').innerHTML=visibleRows.map(r=>{const source=decisionActivitySourceUrl(r);return `<tr class="decision-selectable-row" data-activity-id="${esc(r.id)}"><td>${decisionActivityDateHtml(r)}</td><td><strong class="decision-activity-type">${esc(decisionActivityTypeLabel(r.type))}</strong></td><td><strong>${esc(r.title)}</strong></td><td>${decisionDocumentSummaryCellFinal(r)}</td><td>${decisionDocumentPointsPreviewFinal(r)}</td><td>${esc(r.party||'')}</td><td>${source?`<a href="${esc(source)}" target="_blank" rel="noopener noreferrer">Öppna</a>`:'—'}</td></tr>`;}).join('');
   $('decisionActivityBody').querySelectorAll('[data-activity-id]').forEach(row=>row.onclick=e=>{if(e.target.closest('a'))return;openDecisionActivityDetail(row.dataset.activityId);});
+};
+
+/* Final main-table matter labels and copied-text search.
+   The table should use the clean matter title from the extracted agenda item.
+   Protocol section headers can be shorter, broader, or include OCR context. */
+function decisionMatterTitleIsNoiseFinal(value){
+  const text=String(value||'').replace(/\s+/g,' ').trim();
+  if(!text)return true;
+  if(/^,?\s*§{1,2}\s*\d/.test(text))return true;
+  if(text.length>150&&/\b(?:närvarande|ersättare|övriga|förvaltningsdirektör|nämndsekreterare|sekreterare|justerare|ordförande|digitalt justerat|paragraf)\b/i.test(text))return true;
+  return false;
+}
+function decisionCleanProtocolHeaderTitleFinal(value){
+  return String(value||'')
+    .replace(/^\s*§\s*\d{1,4}(?:\.\d+)?\s*/,'')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+function decisionMatterTitleFinal(row){
+  const candidates=[
+    municipalText(row?.title),
+    decisionCleanProtocolHeaderTitleFinal(row?.protocolHeader),
+    municipalText(row?.description)
+  ];
+  return candidates.find(value=>!decisionMatterTitleIsNoiseFinal(value))||'Ärende';
+}
+function decisionMainMatterLabelFinal(row){
+  if(row?.isMeeting)return row.body||'Sammanträde';
+  const point=String(row?.point||'').trim();
+  const title=decisionMatterTitleFinal(row);
+  const plainPoint=point.replace(/^§\s*/,'');
+  if(!plainPoint)return title;
+  const titleNorm=decisionSearchNormalizeFinal(title);
+  const pointNorm=decisionSearchNormalizeFinal(plainPoint);
+  return titleNorm.startsWith(`${pointNorm} `)?title:`${plainPoint}. ${title}`;
+}
+municipalCaseCellHtml=function(row){
+  if(row?.isMeeting)return `<div class="decision-case-cell"><strong>${esc(row.body||'Sammanträde')}</strong><small class="decision-point-note">${esc(row.description||'Hela protokollet för sammanträdet.')}</small>${decisionMainCaseMetaHtmlFinal(row)}</div>`;
+  return `<div class="decision-case-cell"><strong>${esc(decisionMainMatterLabelFinal(row))}</strong>${decisionMainCaseMetaHtmlFinal(row)}</div>`;
+};
+function decisionSearchContainsFinal(text,query){
+  if(!query)return true;
+  if(text.includes(query))return true;
+  const tokens=[...new Set(query.split(' ').filter(token=>token.length>1))];
+  return tokens.length>1&&tokens.every(token=>text.includes(token));
+}
+const decisionSearchTextBeforeMainMatterLabelFinal=decisionSearchTextFinal;
+decisionSearchTextFinal=function(row){
+  if(!row)return '';
+  const base=decisionSearchTextBeforeMainMatterLabelFinal(row);
+  const label=decisionSearchNormalizeFinal([
+    decisionMainMatterLabelFinal(row),
+    row?.point?`${row.point} ${row.title||''}`:'',
+    row?.point?`${row.point}. ${row.title||''}`:''
+  ].join(' '));
+  return `${base} ${label}`.trim();
+};
+decisionPointSearchMatches=function(row){
+  const q=decisionSearchNormalizeFinal(decisionSearchQuery);
+  if(!q)return true;
+  return decisionSearchContainsFinal(decisionSearchTextFinal(row),q);
+};
+const renderDecisionDetailViewBeforeMainMatterConsistencyFinal=renderDecisionDetailView;
+renderDecisionDetailView=function(tab){
+  renderDecisionDetailViewBeforeMainMatterConsistencyFinal(tab);
+  const payload=decisionDetailPayload(tab);
+  const proposal=payload?.proposal;
+  if(!proposal||proposal.isMeeting)return;
+  const title=proposal.pointTitle||tab?.title||payload.decision?.title||'Ärende';
+  $('decisionDetailTitle').textContent=title;
+  const hierarchyTitle=document.querySelector('.decision-hierarchy-item.primary strong');
+  if(hierarchyTitle)hierarchyTitle.textContent=title;
+  const meta=document.querySelector('#decisionDetailMeta span');
+  if(meta)meta.textContent=[proposal.body,payload.decision?.date,decisionValidDiaryNumberFinal(proposal.diary)].filter(Boolean).join(' · ');
+};
+const renderDecisionDetailViewBeforeMeetingDiaryFinal=renderDecisionDetailView;
+renderDecisionDetailView=function(tab){
+  renderDecisionDetailViewBeforeMeetingDiaryFinal(tab);
+  const meeting=decisionProposalRowByKeyAnyFinal(tab?.proposalKey);
+  if(!meeting?.isMeeting)return;
+  const diary=decisionProtocolDiaryNumberFinal(meeting);
+  const meta=document.querySelector('#decisionDetailMeta span');
+  if(meta)meta.textContent=[meeting.documentTitle||'Protokoll',diary?`Diarienummer ${diary}`:''].filter(Boolean).join(' · ');
+  const overview=$('decisionDetailOverview');
+  if(overview&&!overview.querySelector('[data-protocol-diary-card]')){
+    overview.insertAdjacentHTML('beforeend',`<div class="card" data-protocol-diary-card><span>Diarienummer</span><b>${esc(diary||'Saknas')}</b></div>`);
+  }
+};
+const municipalCaseCellHtmlBeforeProtocolDiaryFinal=municipalCaseCellHtml;
+municipalCaseCellHtml=function(row){
+  if(row?.isMeeting){
+    const note=row.documentTitle||row.description||'Hela protokollet för sammanträdet.';
+    return `<div class="decision-case-cell"><strong>${esc(row.body||'Sammanträde')}</strong><small class="decision-point-note">${esc(note)}</small>${decisionMainCaseMetaHtmlFinal(row)}</div>`;
+  }
+  return municipalCaseCellHtmlBeforeProtocolDiaryFinal(row);
 };
 
 /* Final visible-count copy for the Örebro work table. */
@@ -2874,10 +3262,10 @@ renderDecisionMasterView=function(){
 /* Final infinite-scroll status and loading affordance. */
 function decisionLoadMoreWithSpinnerFinal(wrap,update){
   if(!wrap||wrap.dataset.infiniteLoading==='1')return;
+  if(update&&update()===false)return;
   wrap.dataset.infiniteLoading='1';
   wrap.classList.add('table-results-updating','table-infinite-loading');
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
-    update();
     requestAnimationFrame(()=>{
       wrap.classList.remove('table-results-updating','table-infinite-loading');
       delete wrap.dataset.infiniteLoading;
@@ -2899,9 +3287,10 @@ decisionBindInfiniteScrollFinal=function(bodyId,onMore){
 renderDecisionMasterView=function(){
   decisionBindInfiniteScrollFinal('decisionBody',()=>{
     const tab=decisionListTab(),rows=filteredDecisionPointRows();
-    if(decisionVisibleCount(tab.page||0,rows.length)>=rows.length)return;
+    if(decisionVisibleCount(tab.page||0,rows.length)>=rows.length)return false;
     tab.page=(tab.page||0)+1;
     renderDecisionMasterView();
+    return true;
   });
   const listTab=decisionListTab(),filteredRows=filteredDecisionPointRows(),rows=sortedDecisionPointRows(filteredRows),visibleRows=rows.slice(0,decisionVisibleCount(listTab.page||0,rows.length));
   $('decisionOverview').innerHTML=decisionMasterSummaryCards(undefined,filteredRows);
@@ -2928,9 +3317,10 @@ renderDecisionActivityView=function(activeRow=null){
   if(activeRow){renderDecisionDocumentDetailFinal(activeRow);return;}
   decisionBindInfiniteScrollFinal('decisionActivityBody',()=>{
     const tab=decisionActivityTabs[0]||{page:0},rows=sortedDecisionActivityRows(filteredDecisionActivityRows());
-    if(decisionVisibleCount(tab.page||0,rows.length)>=rows.length)return;
+    if(decisionVisibleCount(tab.page||0,rows.length)>=rows.length)return false;
     tab.page=(tab.page||0)+1;
     renderDecisionActivityView();
+    return true;
   });
   $('decisionActivityListPane').hidden=false;
   $('decisionActivityDetailPane').hidden=true;
@@ -2946,7 +3336,7 @@ renderDecisionActivityView=function(activeRow=null){
   $('decisionActivityStatus').textContent=rows.length?`Visar ${fmtInt(visibleRows.length)} av ${fmtInt(rows.length)} styrdokument.`:'Inga styrdokument matchar de aktiva filtren.';
   $('decisionActivityHead').innerHTML=`<tr>${decisionActivitySortableHeader('date','Datum')}${decisionActivitySortableHeader('type','Dokumenttyp')}${decisionActivitySortableHeader('title','Titel')}${decisionActivitySortableHeader('summary','Sammanfattning')}${decisionActivitySortableHeader('points','Viktigt')}${decisionActivitySortableHeader('party','Område/organ')}<th>Källa</th></tr>`;
   $('decisionActivityHead').querySelectorAll('[data-activity-sort]').forEach(th=>{th.onclick=()=>setDecisionActivitySort(th.dataset.activitySort);});
-  $('decisionActivityBody').innerHTML=visibleRows.map(r=>`<tr class="decision-selectable-row" data-activity-id="${esc(r.id)}"><td>${decisionActivityDateHtml(r)}</td><td><strong class="decision-activity-type">${esc(decisionActivityTypeLabel(r.type))}</strong></td><td><strong>${esc(r.title)}</strong></td><td>${decisionDocumentSummaryCellFinal(r)}</td><td>${decisionDocumentPointsPreviewFinal(r)}</td><td>${esc(r.party||'')}</td><td>${r.url?`<a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Öppna</a>`:'—'}</td></tr>`).join('');
+  $('decisionActivityBody').innerHTML=visibleRows.map(r=>{const source=decisionActivitySourceUrl(r);return `<tr class="decision-selectable-row" data-activity-id="${esc(r.id)}"><td>${decisionActivityDateHtml(r)}</td><td><strong class="decision-activity-type">${esc(decisionActivityTypeLabel(r.type))}</strong></td><td><strong>${esc(r.title)}</strong></td><td>${decisionDocumentSummaryCellFinal(r)}</td><td>${decisionDocumentPointsPreviewFinal(r)}</td><td>${esc(r.party||'')}</td><td>${source?`<a href="${esc(source)}" target="_blank" rel="noopener noreferrer">Öppna</a>`:'—'}</td></tr>`;}).join('');
   $('decisionActivityBody').querySelectorAll('[data-activity-id]').forEach(row=>row.onclick=e=>{if(e.target.closest('a'))return;openDecisionActivityDetail(row.dataset.activityId);});
 };
 /* Final final visible-count copy. Keep at EOF. */
@@ -2963,9 +3353,10 @@ decisionMasterSummaryCards=function(rows=filteredDecisionRows(),pointRows=filter
 renderDecisionMasterView=function(){
   decisionBindInfiniteScrollFinal('decisionBody',()=>{
     const tab=decisionListTab(),rows=filteredDecisionPointRows();
-    if(decisionVisibleCount(tab.page||0,rows.length)>=rows.length)return;
+    if(decisionVisibleCount(tab.page||0,rows.length)>=rows.length)return false;
     tab.page=(tab.page||0)+1;
     renderDecisionMasterView();
+    return true;
   });
   const listTab=decisionListTab(),filteredRows=filteredDecisionPointRows(),rows=sortedDecisionPointRows(filteredRows),visibleRows=rows.slice(0,decisionVisibleCount(listTab.page||0,rows.length));
   $('decisionOverview').innerHTML=decisionMasterSummaryCards(undefined,filteredRows);
@@ -2988,6 +3379,267 @@ renderDecisionMasterView=function(){
   $('decisionDetailPane').hidden=true;
 };
 
+/* Canonical protocol matter headers.
+   The visible matter title must come from the protocol section header (`ht`),
+   not from the shorter case title (`t`) or extracted decision text (`p`). */
+function decisionProtocolMatterHeaderFinal(row){
+  if(!row)return 'Ärende';
+  decisionHydrateTextFieldsFinal(row);
+  return String(row.protocolHeader||row.title||'Ärende').replace(/\s+/g,' ').trim()||'Ärende';
+}
+function decisionApplyProtocolMatterHeadersFinal(){
+  if(!Array.isArray(decisionAllPointRows))return;
+  decisionAllPointRows.forEach(row=>{
+    const header=decisionProtocolMatterHeaderFinal(row);
+    row.pointTitle=header;
+    row.canonicalMatterHeader=header;
+  });
+}
+const ensureDecisionDataBeforeProtocolMatterHeadersFinal=ensureDecisionData;
+ensureDecisionData=function(){
+  ensureDecisionDataBeforeProtocolMatterHeadersFinal();
+  decisionApplyProtocolMatterHeadersFinal();
+};
+municipalCaseCellHtml=function(row){
+  if(row?.isMeeting){
+    const note=row.documentTitle||row.description||'Hela protokollet för sammanträdet.';
+    return `<div class="decision-case-cell"><strong>${esc(row.body||'Sammanträde')}</strong><small class="decision-point-note">${esc(note)}</small>${decisionMainCaseMetaHtmlFinal(row)}</div>`;
+  }
+  return `<div class="decision-case-cell"><strong>${esc(decisionProtocolMatterHeaderFinal(row))}</strong>${decisionMainCaseMetaHtmlFinal(row)}</div>`;
+};
+const decisionTabTitleForBeforeProtocolMatterHeadersFinal=decisionTabTitleFor;
+decisionTabTitleFor=function(row){
+  if(row?.isMeeting)return decisionTabTitleForBeforeProtocolMatterHeadersFinal(row);
+  return `${row.date} · ${decisionProtocolMatterHeaderFinal(row)}`.slice(0,80);
+};
+const renderDecisionDetailViewBeforeProtocolMatterHeadersFinal=renderDecisionDetailView;
+renderDecisionDetailView=function(tab){
+  renderDecisionDetailViewBeforeProtocolMatterHeadersFinal(tab);
+  const payload=decisionDetailPayload(tab);
+  const proposal=payload?.proposal;
+  if(!proposal||proposal.isMeeting)return;
+  const header=decisionProtocolMatterHeaderFinal(proposal);
+  $('decisionDetailTitle').textContent=header;
+  const hierarchyTitle=document.querySelector('.decision-hierarchy-item.primary strong');
+  if(hierarchyTitle)hierarchyTitle.textContent=header;
+};
 
+/* Canonical organ names.
+   Merge the misspelled committee label into the official name everywhere:
+   filters, row display, saved selections, and meeting grouping. */
+function decisionCanonicalOrganNameFinal(value){
+  return municipalNorm(value)
+    .replace(/\s+/g,' ')
+    .replace(/\s+20\d{2}.*20\d{2}$/,'')
+    .replace(/hållbarhetssutskott/gi,'hållbarhetsutskott')
+    .replace(/hållbarhetssutskott/gi,'hållbarhetsutskott')
+    .trim();
+}
+decisionOrganCanonical=function(value){
+  return decisionCanonicalOrganNameFinal(value);
+};
+decisionOrganCanonicalFinal=function(value){
+  return decisionCanonicalOrganNameFinal(value);
+};
+uniqueDecisionOrganValues=function(values){
+  return uniqueDecisionValues(values.map(decisionCanonicalOrganNameFinal));
+};
+decisionOrganMatches=function(selected,value){
+  const canonical=decisionCanonicalOrganNameFinal(value);
+  const canonicalSelected=normalizeDecisionSelectionState(selected).map(decisionCanonicalOrganNameFinal);
+  return canonicalSelected.includes(canonical);
+};
+decisionOrganMatchesFinal=function(selected,value){
+  return decisionOrganMatches(selected,value);
+};
+function decisionApplyOrganNamesFinal(){
+  for(const rows of [decisionAllPointRows,decisionRows,decisionMemberRows,decisionPositionRows]){
+    if(!Array.isArray(rows))continue;
+    rows.forEach(row=>{
+      if(row&&row.body!=null)row.body=decisionCanonicalOrganNameFinal(row.body);
+    });
+  }
+  if(decisionFilterLocks?.decisionOrgan){
+    decisionFilterLocks.decisionOrgan=uniqueDecisionOrganValues(decisionFilterLocks.decisionOrgan);
+  }
+}
+const ensureDecisionDataBeforeCanonicalOrganNamesFinal=ensureDecisionData;
+ensureDecisionData=function(){
+  ensureDecisionDataBeforeCanonicalOrganNamesFinal();
+  decisionApplyOrganNamesFinal();
+};
 
+/* Meeting search rollups.
+   A synthetic Sammanträden row should match searches against every agenda
+   item in that protocol, not only the representative row used to build it. */
+function decisionMeetingChildSearchTextFinal(row){
+  return [
+    row.title,
+    row.pointTitle,
+    row.protocolHeader,
+    row.description,
+    row.abstractText,
+    row.fullDecisionText,
+    row.diary,
+    row.caseNumber,
+    row.documentTitle,
+    row.body,
+    row.result,
+    row.proposalType
+  ].join(' ');
+}
+function decisionApplyMeetingSearchRollupsFinal(){
+  if(!Array.isArray(decisionAllPointRows))return;
+  const textByProtocol=new Map();
+  const textByMeeting=new Map();
+  decisionAllPointRows.forEach(row=>{
+    if(!row||row.isMeeting)return;
+    const text=decisionMeetingChildSearchTextFinal(row);
+    const protocolKey=decisionMeetingProtocolKey(row);
+    const meetingKey=decisionMeetingKey(row.date,row.body);
+    textByProtocol.set(protocolKey,`${textByProtocol.get(protocolKey)||''} ${text}`);
+    textByMeeting.set(meetingKey,`${textByMeeting.get(meetingKey)||''} ${text}`);
+  });
+  decisionAllPointRows.forEach(row=>{
+    if(!row?.isMeeting)return;
+    const ownText=decisionMeetingChildSearchTextFinal(row);
+    const childText=textByProtocol.get(row.meetingKey)||textByMeeting.get(decisionMeetingKey(row.date,row.body))||'';
+    row.meetingSearchText=decisionSearchNormalizeFinal(`${ownText} ${childText}`);
+  });
+}
+const ensureDecisionDataBeforeMeetingSearchRollupsFinal=ensureDecisionData;
+ensureDecisionData=function(){
+  ensureDecisionDataBeforeMeetingSearchRollupsFinal();
+  decisionApplyMeetingSearchRollupsFinal();
+};
+const decisionPointSearchMatchesBeforeMeetingRollupsFinal=decisionPointSearchMatches;
+decisionPointSearchMatches=function(row){
+  const q=decisionSearchNormalizeFinal(decisionSearchQuery);
+  if(!q)return true;
+  if(row?.isMeeting&&row.meetingSearchText)return row.meetingSearchText.includes(q);
+  return decisionPointSearchMatchesBeforeMeetingRollupsFinal(row);
+};
 
+function decisionProposalTypeCanonicalFinal(value){
+  const text=municipalNorm(value);
+  const folded=text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g,'')
+    .replace(/ä|ä/gi,'a')
+    .toLowerCase();
+  return folded.includes('sammantr')?'meeting':folded;
+}
+function decisionMeetingSearchTextOnDemandFinal(row){
+  if(!row?.isMeeting)return '';
+  if(row.meetingSearchText)return row.meetingSearchText;
+  const protocolKey=row.meetingKey;
+  const meetingKey=decisionMeetingKey(row.date,row.body);
+  const childText=decisionAllPointRows
+    .filter(candidate=>!candidate?.isMeeting&&(decisionMeetingProtocolKey(candidate)===protocolKey||decisionMeetingKey(candidate.date,candidate.body)===meetingKey))
+    .map(decisionMeetingChildSearchTextFinal)
+    .join(' ');
+  row.meetingSearchText=decisionSearchNormalizeFinal(`${decisionMeetingChildSearchTextFinal(row)} ${childText}`);
+  return row.meetingSearchText;
+}
+const decisionPointSearchMatchesBeforeFinalMeetingFilter=decisionPointSearchMatches;
+decisionPointSearchMatches=function(row){
+  const q=decisionSearchNormalizeFinal(decisionSearchQuery);
+  if(!q)return true;
+  if(row?.isMeeting)return decisionMeetingSearchTextOnDemandFinal(row).includes(q);
+  return decisionPointSearchMatchesBeforeFinalMeetingFilter(row);
+};
+filteredDecisionPointRows=function(){
+  const organs=selectedDecisionValues('decisionOrgan');
+  const parties=selectedDecisionValues('decisionParty');
+  const members=selectedDecisionValues('decisionMember');
+  const votes=selectedDecisionValues('decisionVote');
+  const results=normalizeDecisionResultFilterSelection(selectedDecisionValues('decisionResult'));
+  const types=selectedDecisionValues('decisionProposalType').map(decisionProposalTypeCanonicalFinal);
+  const requiresVoteMatch=parties.length||members.length||votes.length;
+  const attendanceKeys=new Set(members.length&&!votes.length?decisionFilteredAttendanceRows().map(row=>row.attendanceKey):[]);
+  const counts=new Map();
+  filteredDecisionRows().forEach(row=>{
+    const key=`${row.id}|${row.point}`;
+    if(!counts.has(key))counts.set(key,{voteRoundCount:0,voteCount:0,yes:0,no:0,abstain:0,absent:0,voteIds:new Set()});
+    const count=counts.get(key);
+    count.voteCount++;
+    const eventId=decisionVoteEventBase(row.intressentId);
+    if(eventId)count.voteIds.add(eventId);
+    count.voteRoundCount=count.voteIds.size;
+    if(row.vote==='Ja')count.yes++;
+    else if(row.vote==='Nej')count.no++;
+    else if(row.vote==='Avstår')count.abstain++;
+    else if(row.vote==='Frånvarande')count.absent++;
+  });
+  return decisionAllPointRows
+    .filter(row=>
+      (!types.length||types.includes(row?.isMeeting?'meeting':decisionProposalTypeCanonicalFinal(row.proposalType||'beslut')))&&
+      decisionDateMatches(row.date)&&
+      decisionPointSearchMatches(row)&&
+      (!organs.length||decisionOrganMatches(organs,row.body))&&
+      (!results.length||results.includes(decisionResultFilterGroup(row.result||'beslut')))&&
+      (!requiresVoteMatch||counts.has(`${row.id}|${row.point}`)||attendanceKeys.has(row.attendanceKey))
+    )
+    .map(row=>{
+      const count=counts.get(`${row.id}|${row.point}`)||{voteRoundCount:0,voteCount:0,yes:0,no:0,abstain:0,absent:0};
+      if(requiresVoteMatch&&!attendanceKeys.has(row.attendanceKey))return {...row,voteRoundCount:count.voteRoundCount||0,voteCount:count.voteCount||0,yes:count.yes||0,no:count.no||0,abstain:count.abstain||0,absent:count.absent||0};
+      if(requiresVoteMatch&&attendanceKeys.has(row.attendanceKey)&&!counts.has(`${row.id}|${row.point}`))return {...row,voteRoundCount:row.fullVoteRoundCount||0,voteCount:row.fullVoteCount||0,yes:row.fullYes||0,no:row.fullNo||0,abstain:row.fullAbstain||0,absent:row.fullAbsent||0};
+      if(decisionVotesAreFiltered())return row;
+      return decisionApplyCanonicalVoteTotalsFinal({...row});
+    });
+};
+
+function decisionPdfIconFinal(extraClass=''){
+  const cls=['decision-pdf-icon',extraClass].filter(Boolean).join(' ');
+  return `<svg class="${esc(cls)}" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 2h9l5 5v15H5z" fill="#e31b23"></path><path d="M14 2v5h5z" fill="#f36b70"></path><path d="M8.2 13.1c2.7-.7 5-1.6 7.1-2.8M10.3 6.1c.2 2.2 1 4.3 2.5 6.4M9.2 13.1c.7-1.2 1.3-2.6 1.8-4.1" fill="none" stroke="#fff" stroke-width=".85" stroke-linecap="round" stroke-linejoin="round"></path><rect x="5.9" y="14.65" width="12.2" height="6.15" rx=".8" fill="#fff"></rect><text x="12" y="17.82" text-anchor="middle" dominant-baseline="middle" font-size="4.75" font-weight="900" fill="#e31b23" font-family="Arial, Helvetica, sans-serif">PDF</text></svg>`;
+}
+function decisionDecorateMainPdfLinksFinal(){
+  ['decisionBody','decisionActivityBody'].forEach(id=>{
+    const body=$(id);
+    if(!body)return;
+    body.querySelectorAll('td:last-child a').forEach(link=>{
+      if(link.dataset.pdfIconApplied)return;
+      link.dataset.pdfIconApplied='1';
+      link.classList.add('decision-pdf-source-link');
+      link.setAttribute('aria-label','Öppna PDF');
+      link.title='Öppna PDF';
+      link.innerHTML=decisionPdfIconFinal();
+    });
+  });
+}
+function decisionDecorateDetailPdfLinksFinal(){
+  ['decisionDetailMeta','decisionActivityDetailMeta'].forEach(id=>{
+    const host=$(id);
+    if(!host)return;
+    host.querySelectorAll('a.decision-official-link').forEach(link=>{
+      const label=municipalNorm(link.textContent);
+      if(link.dataset.pdfIconApplied||!/^Öppna källa(?:n)?$/i.test(label))return;
+      link.dataset.pdfIconApplied='1';
+      link.innerHTML=`<span>Öppna källa</span>${decisionPdfIconFinal('decision-pdf-icon-inline')}`;
+    });
+  });
+}
+const renderDecisionMasterViewBeforePdfLinksFinal=renderDecisionMasterView;
+renderDecisionMasterView=function(){
+  renderDecisionMasterViewBeforePdfLinksFinal();
+  decisionDecorateMainPdfLinksFinal();
+};
+const renderDecisionDetailViewBeforePdfLinksFinal=renderDecisionDetailView;
+renderDecisionDetailView=function(tab){
+  renderDecisionDetailViewBeforePdfLinksFinal(tab);
+  decisionDecorateDetailPdfLinksFinal();
+};
+if(typeof renderDecisionActivityDetail==='function'){
+  const renderDecisionActivityDetailBeforePdfLinksFinal=renderDecisionActivityDetail;
+  renderDecisionActivityDetail=function(row){
+    renderDecisionActivityDetailBeforePdfLinksFinal(row);
+    decisionDecorateDetailPdfLinksFinal();
+  };
+}
+if(typeof renderDecisionActivityView==='function'){
+  const renderDecisionActivityViewBeforePdfLinksFinal=renderDecisionActivityView;
+  renderDecisionActivityView=function(activeRow=null){
+    renderDecisionActivityViewBeforePdfLinksFinal(activeRow);
+    decisionDecorateMainPdfLinksFinal();
+  };
+}

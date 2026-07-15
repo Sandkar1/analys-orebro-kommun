@@ -3,16 +3,17 @@
 <head>
 <meta charset="utf-8">
 <title>Mandatfördelning och analys</title>
-<meta name="theme-color" content="#0f6875">
+<meta name="theme-color" content="#173a5e">
 <link rel="icon" href="assets/election-analysis-icon.svg" type="image/svg+xml">
 <link rel="alternate icon" href="assets/app_icon_modern_compressed.jpg" type="image/jpeg">
 <link rel="apple-touch-icon" href="assets/app_icon_modern_compressed.jpg">
-<link rel="stylesheet" href="styles.css?v=20260624-3">
+<link rel="stylesheet" href="styles.css?v=20260626-20">
 </head>
 <body>
 <main>
 <h1>Verktyg för analysering och bearbetning av<br>data relaterat till Örebro kommun</h1>
 <section class="session-toolbar" aria-label="Session">
+<button id="aboutPageButton" class="secondary session-button about-button" type="button">Om sidan</button>
 <button id="exportViewXlsx" class="secondary session-button">Exportera till Excel</button>
 <button id="exportState" class="secondary session-button">Exportera session</button>
 <button id="importState" class="secondary session-button">Importera session</button>
@@ -20,7 +21,8 @@
 <section class="top-tabs">
 <button id="calculatorTopTab" class="top-tab active">Kalkylator för mandat</button>
 <button id="rawTopTab" class="top-tab">Historisk valdata</button>
-<button id="decisionTopTab" class="top-tab" hidden>Örebro kommuns arbete</button>
+<button id="decisionTopTab" class="top-tab" hidden>Örebro kommuns beslut</button>
+<button id="decisionActivityTopTab" class="top-tab" hidden>Örebro kommuns styrdokument</button>
 </section>
 <section id="calculatorView" class="view active">
 <section class="tabs" id="tabs">
@@ -28,7 +30,6 @@
 <section class="actions">
 <button id="newTab" class="secondary">+ Ny beräkning</button>
 <button id="duplicateTab" class="secondary">Duplicera flik</button>
-<button id="closeTab" class="secondary">Stäng flik</button>
 </section>
 <section class="grid">
 <div class="field">
@@ -88,10 +89,10 @@
 <table class="input-table">
 <thead>
 <tr>
+<th>Rad</th>
 <th>Ikon</th>
 <th>Parti eller samverkansgrupp</th>
 <th>Röster</th>
-<th>Rad</th>
 <th>
 </th>
 </tr>
@@ -306,6 +307,8 @@
 <div id="decisionDetailStatus" class="raw-status"></div>
 <div id="decisionDetailGroups" class="decision-party-grid"></div>
 </section>
+</section>
+<section id="decisionActivityView" class="view">
 <section id="decisionActivityPane" class="decision-activity-pane">
 <a class="raw-source-note decision-activity-source-note" href="https://www.orebro.se/kommun--politik/politik--beslut.html" target="_blank" rel="noopener noreferrer">Källa: Örebro kommun</a>
 <h2>Örebro kommuns styrdokument</h2>
@@ -403,6 +406,29 @@
 </section>
 </div>
 </section>
+<section id="aboutOverlay" class="confirm-overlay" hidden>
+<div class="confirm-dialog session-dialog about-dialog" role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
+<h2 id="aboutTitle">Om sidan</h2>
+<div class="about-dialog-content">
+<dl class="about-dialog-meta">
+<dt>Gjord av</dt>
+<dd>Samuel Andersson (M), Örebro kommun</dd>
+<dt>Funktionalitet</dt>
+<dd>
+<ul>
+<li>Mandatkalkylator för riksdags-, region- och kommunalval med D'Hondt, jämkade uddatalsmetoden.</li>
+<li>Historisk valdatabas för allmänna val till riksdagen, regioner och kommuner 2010–2022.</li>
+<li>Databas för alla offentliga protokoll för kommunfullmäktige, nämnder, kommunstyrelsen och olika utskott för Örebro kommun från 1 januari 2023–21 juni 2026 (Digital anslagstavla och Socialnämndens personärende-protokoll ej inlästa).</li>
+<li>Databas för samtliga per 21 juni 2026 aktuella styrdokument, riktlinjer, program etc. för Örebro kommun.</li>
+</ul>
+</dd>
+</dl>
+</div>
+<section class="confirm-actions">
+<button id="aboutClose" type="button">Stäng</button>
+</section>
+</div>
+</section>
 <section id="groupOverlay" class="confirm-overlay" hidden>
 <div class="confirm-dialog group-dialog" role="dialog" aria-modal="true" aria-labelledby="groupTitle" aria-describedby="groupMessage">
 <h2 id="groupTitle">Namn på samverkansgrupp</h2>
@@ -414,16 +440,14 @@
 </section>
 </div>
 </section>
-<footer class="page-footer">
-<section id="about" class="meta" aria-label="Om applikationen">
-</section>
-</footer>
 <script defer src="data/historic-data.js"></script>
 <script defer src="data/municipal-document-data-orebro.js"></script>
-<script defer src="js/app-core.js?v=20260624-2"></script>
-<script defer src="js/calculator-tab.js?v=20260624-2"></script>
+<script defer src="data/municipal-protocol-diary-data.js?v=20260624-1"></script>
+<script defer src="js/app-core.js?v=20260626-1"></script>
+<script defer src="js/calculator-tab.js?v=20260626-7"></script>
 <script defer src="js/historisk-valdata-tab.js"></script>
-<script defer src="js/municipal-protocols-tab.js?v=20260623-2"></script>
-<script defer src="js/search-performance.js?v=20260622-4"></script>
-<script defer src="js/app.js?v=20260623-1"></script></main></body></html>
+<script defer src="js/municipal-protocols-tab.js?v=20260626-1"></script>
+<script defer src="js/search-performance.js?v=20260625-2"></script>
+<script defer src="js/municipal-documents-tab.js?v=20260625-2"></script>
+<script defer src="js/app.js?v=20260626-1"></script></main></body></html>
 
