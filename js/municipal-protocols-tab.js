@@ -1228,8 +1228,10 @@ function decisionReferenceDateTargetFinal(current,label){
   if(!rows.length)return null;
   const sameMatter=rows.filter(r=>r.matterId&&current?.matterId&&r.matterId===current.matterId);
   if(sameMatter.length)return {kind:'internal',row:decisionReferenceBestRowFinal(sameMatter,current)};
-  const sameBody=rows.filter(r=>r.body&&current?.body&&r.body===current.body);
-  return {kind:'source',row:(sameBody[0]||rows[0])};
+  /* A date alone does not identify a protocol. Different municipal bodies and
+     external company boards can meet on the same day. Only the same tracked
+     matter is strong enough evidence that this is the referenced protocol. */
+  return null;
 }
 function decisionReferenceResolveFinal(label,current){
   if(/^\u00a7\s*\d{1,4}(?:\.\d+)?$/i.test(label)){
@@ -3665,4 +3667,30 @@ renderDecisionDetailView=function(tab){
   decisionRenderingCompleteDetailFinal=true;
   try{return renderDecisionDetailViewBeforeCompleteVotesFinal(tab);}
   finally{decisionRenderingCompleteDetailFinal=false;}
+};
+
+/* Vote columns are counts for every decision-point row. A missing counter
+   therefore means zero recorded votes, not "not applicable". Normalize at the
+   final data boundary so imported protocols and synthetic meeting rows follow
+   the same numeric contract in rendering, sorting, filtering, and details. */
+const decisionVoteCounterFieldsFinal=[
+  'voteRoundCount','voteCount','yes','no','abstain','absent',
+  'fullVoteRoundCount','fullVoteCount','fullYes','fullNo','fullAbstain','fullAbsent'
+];
+function decisionNormalizeVoteCountersFinal(row){
+  if(!row)return row;
+  decisionVoteCounterFieldsFinal.forEach(field=>{
+    const value=Number(row[field]);
+    row[field]=Number.isFinite(value)?value:0;
+  });
+  return row;
+}
+const ensureDecisionDataBeforeVoteCounterNormalizationFinal=ensureDecisionData;
+ensureDecisionData=function(){
+  ensureDecisionDataBeforeVoteCounterNormalizationFinal();
+  if(decisionReady)decisionAllPointRows.forEach(decisionNormalizeVoteCountersFinal);
+};
+const filteredDecisionPointRowsBeforeVoteCounterNormalizationFinal=filteredDecisionPointRows;
+filteredDecisionPointRows=function(){
+  return filteredDecisionPointRowsBeforeVoteCounterNormalizationFinal().map(decisionNormalizeVoteCountersFinal);
 };

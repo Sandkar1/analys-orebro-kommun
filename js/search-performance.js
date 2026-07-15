@@ -326,8 +326,9 @@ decisionReferenceDateTargetFinal=function(current,label){
   if(!rows.length)return null;
   const sameMatter=rows.filter(row=>row.matterId&&current?.matterId&&row.matterId===current.matterId);
   if(sameMatter.length)return {kind:'internal',row:decisionReferenceBestRowFinal(sameMatter,current)};
-  const sameBody=rows.filter(row=>row.body&&current?.body&&row.body===current.body);
-  return {kind:'source',row:sameBody[0]||rows[0]};
+  /* The date index can contain unrelated meetings held on the same day. Keep
+     ambiguous date mentions as text unless matter identity verifies the link. */
+  return null;
 };
 
 function decisionBindReferenceNavigationFinal(){

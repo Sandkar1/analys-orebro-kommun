@@ -312,7 +312,7 @@ for (const row of runtimeRows) {
 }
 
 const linkAudit = vm.runInContext(String.raw`(()=>{
-  const report={texts:0,candidates:0,internal:0,source:0,noTargetPlainText:0,invalidOutput:0,samples:[]};
+  const report={texts:0,candidates:0,internal:0,source:0,noTargetPlainText:0,invalidOutput:0,samples:[],dates:{candidates:0,internal:0,source:0,plainText:0,sourceSamples:[]}};
   const candidatePattern=/(§\s*\d{1,4}(?:\.\d+)?|(?<![A-Za-zÅÄÖåäö])[A-ZÅÄÖ][A-Za-zÅÄÖåäö]{0,6}\s+\d{1,5}\/20\d{2}(?![A-Za-zÅÄÖåäö])|\b20\d{2}-\d{2}-\d{2}\b|\b\d{1,2}\s+(?:[Jj]anuari|[Ff]ebruari|[Mm]ars|[Aa]pril|[Mm]aj|[Jj]uni|[Jj]uli|[Aa]ugusti|[Ss]eptember|[Oo]ktober|[Nn]ovember|[Dd]ecember)(?:\s+20\d{2})?\b)/g;
   for(const row of decisionAllPointRows){
     if(row.isMeeting)continue;
@@ -329,6 +329,15 @@ const linkAudit = vm.runInContext(String.raw`(()=>{
         const resolveLabel=/^\d{1,2}\s+(?:januari|februari|mars|april|maj|juni|juli|augusti|september|oktober|november|december)$/i.test(label)
           ?decisionInferDateLabelYearFinal(text,match.index,label,row):label;
         const resolved=decisionReferenceResolveFinal(resolveLabel,row);
+        const isDate=/^20\d{2}-\d{2}-\d{2}$/.test(resolveLabel)||/^\d{1,2}\s+(?:januari|februari|mars|april|maj|juni|juli|augusti|september|oktober|november|december)\s+20\d{2}$/i.test(resolveLabel);
+        if(isDate){
+          report.dates.candidates++;
+          if(resolved?.kind==='internal'&&resolved.row)report.dates.internal++;
+          else if(resolved?.kind==='source'&&resolved.row){
+            report.dates.source++;
+            if(report.dates.sourceSamples.length<12)report.dates.sourceSamples.push({id:row.id,point:row.point,label,targetId:resolved.row.id,targetBody:resolved.row.body});
+          }else report.dates.plainText++;
+        }
         if(resolved?.kind==='internal'&&resolved.row)report.internal++;
         else if(resolved?.kind==='source'&&decisionProtocolFirstPageUrlFinal(resolved.row))report.source++;
         else{
@@ -546,4 +555,4 @@ const sourceFailures = checkSourceText && remote.sourceText
     + ['missingTitles', 'missingHeaders', 'missingDescriptions', 'missingDecisions', 'pointTextMismatches', 'invalidPages']
       .reduce((total, category) => total + (remote.sourceText[category]?.count || 0), 0)
   : 0;
-if (hardFailures || linkAudit.invalidOutput || remote.failures.length || sourceFailures) process.exitCode = 1;
+if (hardFailures || linkAudit.invalidOutput || linkAudit.dates.source || remote.failures.length || sourceFailures) process.exitCode = 1;

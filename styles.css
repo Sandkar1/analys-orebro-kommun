@@ -1365,6 +1365,13 @@ table:not(.input-table) tbody tr:nth-child(even) td{
   font-variant-numeric:tabular-nums;
 }
 
+.needed-votes-main{
+  display:inline-flex;
+  align-items:baseline;
+  gap:4px;
+  white-space:nowrap;
+}
+
 .needed-votes-lottery{
   color:var(--muted);
   font-size:12px;

@@ -137,10 +137,31 @@ try {
 
   const result = await evaluate(cdp, `(async()=>{
     const twicePainted=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    await setTopView('calculator');
+    calculateCurrent();
+    await twicePainted();
+    const calculatorRows=[...document.querySelectorAll('#stepSections .needed-votes-row')];
+    const calculatorItems=calculatorRows.flatMap(row=>[...row.querySelectorAll('.needed-votes-item')]);
+    const calculatorRegression={
+      rows:calculatorRows.length,
+      items:calculatorItems.length,
+      sameFormat:calculatorRows.length===2&&calculatorItems.length>0&&calculatorItems.every(item=>item.querySelector('.needed-votes-main > span')?.textContent.trim().endsWith(':')),
+      samples:calculatorItems.slice(0,3).map(item=>item.textContent.replace(/\\s+/g,' ').trim())
+    };
     const start=performance.now();
     await setTopView('decision');
     await twicePainted();
     const initialLoadMs=performance.now()-start;
+    const visibleVotingRows=new Map(filteredDecisionPointRows().map(item=>[decisionProposalKey(item),item]));
+    const votingDisplay=[...document.querySelectorAll('#decisionBody tr')].map(row=>{
+      const proposal=visibleVotingRows.get(row.dataset.proposalKey);
+      return {value:row.cells[4]?.textContent.trim()||'',voteRoundCount:proposal?.voteRoundCount,fullVoteRoundCount:proposal?.fullVoteRoundCount,voteIds:proposal?.voteIds,isMeeting:!!proposal?.isMeeting,id:row.dataset.id,point:proposal?.point||''};
+    });
+    const votingDisplayRegression={
+      zero:votingDisplay.filter(item=>item.value==='0').length,
+      dash:votingDisplay.filter(item=>item.value==='-'||item.value==='—').length,
+      dashSamples:votingDisplay.filter(item=>item.value==='-'||item.value==='—').slice(0,5)
+    };
     const tracked=[
       'ensureDecisionData','buildDecisionFilters','filteredDecisionRows','filteredDecisionPointRows',
       'decisionProposalRowByKeyAnyFinal','decisionDetailPayload','decisionDetailRows',
@@ -220,6 +241,20 @@ try {
       };
       decisionFilterLocks.decisionVote=[];
     }
+    const dateReferenceRegression=[
+      ['case_body_kommunstyrelsen_2026_06_01_127','127.8'],
+      ['case_body_kommunstyrelsen_2026_06_01_127','127.9'],
+      ['case_body_kommunfullmaktige_2026_06_09_203','203.8'],
+      ['case_body_kommunfullmaktige_2026_06_09_203','203.9']
+    ].map(([id,point])=>{
+      const row=decisionAllPointRows.find(item=>item.id===id&&String(item.point)===point);
+      const html=row?decisionTextWithReferenceLinksActive(row.description,row):'';
+      return {
+        id,point,found:!!row,
+        datePresent:/2026-05-(?:22|04)/.test(html),
+        dateLinked:/class="decision-text-(?:ref|source-ref)"[^>]*>2026-05-(?:22|04)</.test(html)
+      };
+    });
     return {
       initialLoadMs,
       counts:{
@@ -230,9 +265,12 @@ try {
         memberRows:decisionMemberRows?.length||0,
         visibleRows:rows.length
       },
+      calculatorRegression,
+      votingDisplayRegression,
       clicks,
       linkNavigation,
-      voteRegression
+      voteRegression,
+      dateReferenceRegression
     };
   })()`);
   console.log(JSON.stringify(result, null, 2));
@@ -240,7 +278,9 @@ try {
   const voteRegressionSections=result.voteRegression?.sections||[];
   const voteRegressionOk=result.voteRegression?.found&&result.voteRegression.noNamed===16&&voteRegressionSections.some(section=>section.heading==='Frånvarande 1'&&section.named===1)&&result.voteRegression.noMeaning==='bifall till Markus Allards (ÖrP) m.fl. yrkande om bifall till motionen';
   const clickThresholdMs=fileUrlMode?300:150;
-  if (slowestClick > clickThresholdMs || !result.linkNavigation.found || !result.linkNavigation.navigated || !voteRegressionOk) {
+  const votingDisplayOk=result.votingDisplayRegression?.dash===0;
+  const dateReferenceRegressionOk=result.dateReferenceRegression?.length===4&&result.dateReferenceRegression.every(item=>item.found&&item.datePresent&&!item.dateLinked);
+  if (slowestClick > clickThresholdMs || !result.calculatorRegression?.sameFormat || !votingDisplayOk || !result.linkNavigation.found || !result.linkNavigation.navigated || !voteRegressionOk || !dateReferenceRegressionOk) {
     throw new Error(`Municipal interaction benchmark failed (slowest click ${slowestClick.toFixed(1)} ms).`);
   }
 } finally {
