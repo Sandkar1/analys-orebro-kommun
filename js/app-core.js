@@ -4,7 +4,7 @@ const municipalWorkEnabled=true;
 const historicPack=window.historicPack;
 let decisionPack=window.municipalProtocolPack,documentPack=window.municipalDocumentPack,decisionPackPromise=null;
 const stateFormatVersion=1;
-const municipalProtocolDataVersion='20260626-1';
+const municipalProtocolDataVersion='20260715-1';
 const municipalProtocolPackSrcs=[
   `data/municipal-protocol-data-orebro-v2.part1.js?v=${municipalProtocolDataVersion}`,
   `data/municipal-protocol-data-orebro-v2.part2.js?v=${municipalProtocolDataVersion}`
@@ -243,6 +243,28 @@ function repairMunicipalVoteEvents(documents,voteRows){
   Object.assign(document.pm?.['9']||{}, {stated_yes:13,stated_no:6,stated_abstain:15,stated_absent:0});
   voteRows.push(docIndex,'9','Ewa Lindén','V','Avstår',`${secondId}:source_repair_ewa_linden`);
 }
+function repairMunicipalTruncatedVoteMeanings(documents){
+  const suspiciousEnding=/(?:\bm|\bm\.f|\bm\.fl|\b(?:och|samt|till|mot|respektive))$/iu;
+  const escapeRegExp=value=>String(value).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  for(const document of documents){
+    const sourceText=[document.pd,document.yd,document.vd].filter(Boolean).join('\n').replace(/\s+/g,' ').trim();
+    if(!sourceText)continue;
+    for(const event of Object.values(document.ve||{})){
+      for(const field of ['yes_meaning','no_meaning']){
+        const meaning=String(event?.[field]||'').replace(/\s+/g,' ').trim();
+        if(!suspiciousEnding.test(meaning))continue;
+        const prefix=meaning.match(/^((?:bifall|avslag)\s+till\s+)/iu)?.[1]||'';
+        const stem=meaning.slice(prefix.length).replace(/\s+m(?:\.f(?:l)?)?$/iu,'').trim();
+        if(stem.length<8)continue;
+        const sentenceBoundary='(?:Ordförand|Kommun|Nämnden|Styrelsen|Utskottet|Därefter|Beslut|Reservation|Proposition|Votering)';
+        const match=sourceText.match(new RegExp(`${escapeRegExp(stem)}(.+?)(?=\\.\\s+${sentenceBoundary}|$)`,'iu'));
+        if(!match)continue;
+        const repaired=`${prefix}${stem}${match[1]}`.replace(/\s+/g,' ').replace(/[.;:,]+$/u,'').trim();
+        if(repaired.length>meaning.length)event[field]=repaired;
+      }
+    }
+  }
+}
 function markMunicipalVoteCountConflicts(documents,voteRows){
   const counts=new Map();
   for(let index=0;index<voteRows.length;index+=6){
@@ -288,6 +310,7 @@ function assembleMunicipalProtocolPackParts(){
   disambiguateMunicipalProtocolDocumentIds(documents);
   disambiguateMunicipalDecisionPointIds(documents);
   repairMunicipalVoteEvents(documents,voteRows);
+  repairMunicipalTruncatedVoteMeanings(documents);
   markMunicipalVoteCountConflicts(documents,voteRows);
   return window.municipalProtocolPack={...part1,d:documents,r:voteRows,pr:part2.pr||[],mr:memberRows};
 }

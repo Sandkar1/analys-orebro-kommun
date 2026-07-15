@@ -2653,7 +2653,7 @@ function decisionInferredVoteEventsFromTextFinal(doc){
     const before=text.slice(Math.max(0,marker.index-2400),marker.index);
     const point=decisionInferredVotePointFinal(doc,before);
     if(!point||doc?.v?.[point])return;
-    const meaning=section.match(/Ja-r(?:\u00f6|o)st\s+inneb(?:\u00e4|a)r\s+(.+?)\.\s*Nej-?\s*r(?:\u00f6|o)st\s+inneb(?:\u00e4|a)r\s+(.+?)\./is);
+    const meaning=section.match(/Ja-r(?:\u00f6|o)st\s+inneb(?:\u00e4|a)r\s+(.+?)\.\s*Nej-?\s*r(?:\u00f6|o)st\s+inneb(?:\u00e4|a)r\s+(.+?)\.\s*(?=Ja-r(?:\u00f6|o)ster|Nej-r(?:\u00f6|o)ster|Ordf(?:\u00f6|o)rande|resultatet)/is);
     const names=section.match(/Ja-r(?:\u00f6|o)ster\s+l(?:\u00e4|a)mnas\s+av\s+(.+?)\.\s*Nej-r(?:\u00f6|o)ster\s+l(?:\u00e4|a)mnas\s+av\s+(.+?)(?:\.|\nOrdf(?:\u00f6|o)rande)/is);
     const result=section.match(/resultatet\s+(\d+)\s+ja-r(?:\u00f6|o)ster\s+och\s+(\d+)\s+nej-r(?:\u00f6|o)ster/i);
     if(!meaning||!names||!result)return;
@@ -3643,3 +3643,26 @@ if(typeof renderDecisionActivityView==='function'){
     decisionDecorateMainPdfLinksFinal();
   };
 }
+
+/* List filters decide which decision points are discoverable. Once a decision
+   is opened, always render its complete protocol vote record so a persisted
+   Ja/Nej, party, or member filter cannot hide the other official vote rows. */
+decisionDetailRows=function(tab){
+  const id=typeof tab==='object'?String(tab.id||''):String(tab||'');
+  const sourcePoints=typeof tab==='object'?normalizeDecisionSelectionState(tab.sourcePoints):[];
+  let rows=decisionRows.filter(row=>String(row.id)===id);
+  if(sourcePoints.length)rows=rows.filter(row=>sourcePoints.includes(String(row.point)));
+  else if(typeof tab==='object'&&(tab.sourcePoint||tab.point))rows=rows.filter(row=>String(row.point)===String(tab.sourcePoint||tab.point));
+  return rows;
+};
+let decisionRenderingCompleteDetailFinal=false;
+const decisionVotesAreFilteredBeforeCompleteDetailFinal=decisionVotesAreFiltered;
+decisionVotesAreFiltered=function(){
+  return decisionRenderingCompleteDetailFinal?false:decisionVotesAreFilteredBeforeCompleteDetailFinal();
+};
+const renderDecisionDetailViewBeforeCompleteVotesFinal=renderDecisionDetailView;
+renderDecisionDetailView=function(tab){
+  decisionRenderingCompleteDetailFinal=true;
+  try{return renderDecisionDetailViewBeforeCompleteVotesFinal(tab);}
+  finally{decisionRenderingCompleteDetailFinal=false;}
+};

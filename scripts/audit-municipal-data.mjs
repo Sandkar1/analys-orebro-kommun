@@ -67,7 +67,31 @@ for (const relative of [
 vm.runInContext('decisionPack=assembleMunicipalProtocolPackParts(); ensureDecisionData();', context);
 const pack = vm.runInContext('decisionPack', context);
 const runtimeRows = vm.runInContext('decisionAllPointRows', context);
+const runtimeVoteRows = vm.runInContext('decisionRows', context);
 const diaryPack = context.window.municipalProtocolDiaryPack || {};
+context.__voteMeaningFixture = {
+  i: 'vote_meaning_fixture',
+  p: { '1': 'Fixture' },
+  pd: 'Votering begärs och verkställs. Ja-röst innebär bifall till förvaltningens förslag. Nej-röst innebär bifall till Anders Anderssons (X) m.fl. yrkande. Ja-röster lämnas av Anna Andersson (S). Nej-röster lämnas av Bertil Bengtsson (M). Ordförande finner med resultatet 1 ja-röster och 1 nej-röster.'
+};
+const voteMeaningFixture = vm.runInContext('decisionInferredVoteEventsFromTextFinal(__voteMeaningFixture)', context);
+delete context.__voteMeaningFixture;
+if (voteMeaningFixture.length !== 1 || voteMeaningFixture[0]?.noMeaning !== 'bifall till Anders Anderssons (X) m.fl. yrkande') {
+  addIssue('vote_meaning_abbreviation_regression', { actual: voteMeaningFixture });
+}
+const findRecordQuery = process.argv.find(argument => argument.startsWith('--find-record='))?.slice(14).trim() || '';
+if (findRecordQuery) {
+  const normalizedQuery = findRecordQuery.toLocaleLowerCase('sv-SE');
+  const selected = pack.d.filter(document => [document.i, document.t, document.ht, document.ad, document.bd]
+    .some(value => String(value || '').toLocaleLowerCase('sv-SE').includes(normalizedQuery)))
+    .map(document => ({
+      id: document.i, date: document.dt, body: document.b, title: document.t, header: document.ht,
+      points: document.p, pointMetadata: document.pm, voteMap: document.v, events: document.ve,
+      proposition: document.pd, votation: document.vd, url: document.u
+    }));
+  console.log(JSON.stringify(selected, null, 2));
+  process.exit(selected.length ? 0 : 1);
+}
 const inspectIds = process.argv.filter(argument => argument.startsWith('--record=')).flatMap(argument => argument.slice(9).split(','));
 if (inspectIds.length) {
   const selected = pack.d.filter(document => inspectIds.includes(String(document.i || ''))).map(document => ({
@@ -87,6 +111,42 @@ if (voteRowsId) {
   }
   console.log(JSON.stringify({ docIndex, events: pack.d[docIndex]?.ve || {}, rows }, null, 2));
   process.exit(docIndex >= 0 ? 0 : 1);
+}
+if (process.argv.includes('--vote-quality')) {
+  const counts = new Map();
+  for (let index = 0; index < pack.r.length; index += 6) {
+    const docIndex = Number(pack.r[index]);
+    const participantId = String(pack.r[index + 5] || '');
+    const eventId = participantId.includes(':') ? participantId.split(':').slice(0, -1).join(':') : participantId;
+    const key = `${docIndex}|${eventId}`;
+    const count = counts.get(key) || { Ja: 0, Nej: 0, 'Avstår': 0, 'Frånvarande': 0 };
+    const vote = String(pack.r[index + 4] || '');
+    if (Object.hasOwn(count, vote)) count[vote]++;
+    counts.set(key, count);
+  }
+  const suspicious = [];
+  for (let docIndex = 0; docIndex < pack.d.length; docIndex++) {
+    const document = pack.d[docIndex];
+    for (const [eventId, event] of Object.entries(document.ve || {})) {
+      const meanings = [['yes', event.yes_meaning], ['no', event.no_meaning]]
+        .filter(([, value]) => /(?:\bm|\bm\.f|\bm\.fl|\b(?:och|samt|till|mot|respektive))$/iu.test(String(value || '').trim()));
+      const count = counts.get(`${docIndex}|${eventId}`) || { Ja: 0, Nej: 0, 'Avstår': 0, 'Frånvarande': 0 };
+      const missingNamed = {
+        yes: Math.max(0, (Number(event.stated_yes) || 0) - count.Ja),
+        no: Math.max(0, (Number(event.stated_no) || 0) - count.Nej),
+        abstain: Math.max(0, (Number(event.stated_abstain) || 0) - count['Avstår']),
+        absent: Math.max(0, (Number(event.stated_absent) || 0) - count['Frånvarande'])
+      };
+      if (meanings.length || Object.values(missingNamed).some(Boolean)) suspicious.push({
+        id: document.i, date: document.dt, body: document.b, eventId,
+        meanings: Object.fromEntries(meanings), named: count,
+        stated: { yes: event.stated_yes, no: event.stated_no, abstain: event.stated_abstain, absent: event.stated_absent },
+        missingNamed, proposition: document.pd, votation: document.vd, url: document.u
+      });
+    }
+  }
+  console.log(JSON.stringify(suspicious, null, 2));
+  process.exit(0);
 }
 
 const protocolByUrl = new Map();
@@ -150,12 +210,20 @@ for (let docIndex = 0; docIndex < pack.d.length; docIndex++) {
       if (!document.ve?.[eventId]) addIssue('vote_map_missing_event', { ...summary, point, eventId });
     }
   }
+  for (const [eventId, event] of Object.entries(document.ve || {})) {
+    for (const [field, value] of [['yes_meaning', event.yes_meaning], ['no_meaning', event.no_meaning]]) {
+      if (/(?:\bm|\bm\.f|\bm\.fl|\b(?:och|samt|till|mot|respektive))$/iu.test(String(value || '').trim())) {
+        addIssue('truncated_vote_meaning', { ...summary, eventId, field, value });
+      }
+    }
+  }
 }
 
 const namedVotes = new Map();
 const voteCountConflicts = [];
 const voteCountConflictKeys = new Set();
 const validVotes = new Set(['Ja', 'Nej', 'Avstår', 'Frånvarande']);
+const runtimeVoteRowKeys = new Set(runtimeVoteRows.map(row => [row.docIndex, row.point, row.name, row.party, row.vote, row.intressentId].map(String).join('|')));
 for (let index = 0; index < pack.r.length; index += 6) {
   const docIndex = Number(pack.r[index]), point = String(pack.r[index + 1] || '');
   const vote = String(pack.r[index + 4] || ''), participantId = String(pack.r[index + 5] || '');
@@ -166,6 +234,8 @@ for (let index = 0; index < pack.r.length; index += 6) {
   }
   if (!validPointByDocument.get(docIndex)?.has(point)) addIssue('vote_row_missing_point', { index: index / 6, docIndex, point, id: document.i });
   if (!validVotes.has(vote)) addIssue('vote_row_invalid_value', { index: index / 6, docIndex, point, vote });
+  const runtimeKey = [docIndex, point, pack.r[index + 2], pack.r[index + 3], vote, participantId].map(String).join('|');
+  if (!runtimeVoteRowKeys.has(runtimeKey)) addIssue('vote_row_missing_from_runtime', { index: index / 6, docIndex, point, participantId });
   const eventId = participantId.includes(':') ? participantId.split(':').slice(0, -1).join(':') : participantId;
   if (!document.ve?.[eventId]) addIssue('vote_row_missing_event', { index: index / 6, docIndex, point, eventId });
   const key = `${docIndex}|${point}|${eventId}`;

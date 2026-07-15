@@ -4,9 +4,10 @@ import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const fileUrlMode = process.argv.includes('--file-url');
 const chromePath = process.env.CHROME_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const mime = new Map([
   ['.html', 'text/html; charset=utf-8'],
@@ -112,7 +113,7 @@ const debugPort = await new Promise((resolve, reject) => {
   });
 });
 const profile = await mkdtemp(path.join(os.tmpdir(), 'municipal-benchmark-'));
-const pageUrl = `http://127.0.0.1:${sitePort}/`;
+const pageUrl = fileUrlMode ? pathToFileURL(path.join(root, 'index.html')).href : `http://127.0.0.1:${sitePort}/`;
 const chrome = spawn(chromePath, [
   '--headless=new',
   '--disable-gpu',
@@ -200,6 +201,25 @@ try {
       };
       break;
     }
+    const voteRegressionId='case_body_kommunfullmaktige_2024_03_20_66';
+    const voteRegressionRow=decisionAllPointRows.find(row=>row.id===voteRegressionId&&String(row.point)==='66');
+    let voteRegression={found:false,noNamed:0,noMeaning:'',sections:[]};
+    if(voteRegressionRow){
+      decisionFilterLocks.decisionVote=['Ja'];
+      openDecisionDetail(voteRegressionRow.id,decisionProposalKey(voteRegressionRow));
+      await twicePainted();
+      const sections=[...document.querySelectorAll('#decisionDetailGroups .decision-vote-type')];
+      const noSection=sections.find(section=>/^Nej\\b/.test(section.querySelector('h4')?.textContent||''));
+      const noMeaning=[...document.querySelectorAll('#decisionDetailGroups .decision-vote-meaning-detail p')]
+        .find(paragraph=>/^Nej:/i.test(paragraph.textContent.trim()))?.textContent.replace(/^Nej:\s*/i,'').trim()||'';
+      voteRegression={
+        found:true,
+        noNamed:noSection?.querySelectorAll('li').length||0,
+        noMeaning,
+        sections:sections.map(section=>({heading:section.querySelector('h4')?.textContent.trim()||'',named:section.querySelectorAll('li').length}))
+      };
+      decisionFilterLocks.decisionVote=[];
+    }
     return {
       initialLoadMs,
       counts:{
@@ -211,12 +231,16 @@ try {
         visibleRows:rows.length
       },
       clicks,
-      linkNavigation
+      linkNavigation,
+      voteRegression
     };
   })()`);
   console.log(JSON.stringify(result, null, 2));
   const slowestClick = Math.max(0, ...result.clicks.map(click => click.elapsedMs));
-  if (slowestClick > 150 || !result.linkNavigation.found || !result.linkNavigation.navigated) {
+  const voteRegressionSections=result.voteRegression?.sections||[];
+  const voteRegressionOk=result.voteRegression?.found&&result.voteRegression.noNamed===16&&voteRegressionSections.some(section=>section.heading==='Frånvarande 1'&&section.named===1)&&result.voteRegression.noMeaning==='bifall till Markus Allards (ÖrP) m.fl. yrkande om bifall till motionen';
+  const clickThresholdMs=fileUrlMode?300:150;
+  if (slowestClick > clickThresholdMs || !result.linkNavigation.found || !result.linkNavigation.navigated || !voteRegressionOk) {
     throw new Error(`Municipal interaction benchmark failed (slowest click ${slowestClick.toFixed(1)} ms).`);
   }
 } finally {
