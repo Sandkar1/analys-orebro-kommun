@@ -1,4 +1,31 @@
 /* Final search overrides, loaded after the feature modules. */
+const decisionPointSearchScoreCacheFinal=new WeakMap();
+function decisionPointSearchRelevanceFinal(row,query=decisionSearchQuery){
+  const q=decisionSearchNormalizeFinal(query);
+  if(!q)return 0;
+  const cached=decisionPointSearchScoreCacheFinal.get(row);
+  if(cached?.query===q)return cached.score;
+  const matterTitle=row?.isMeeting
+    ?[row.title,row.protocolHeader,row.documentTitle].join(' ')
+    :[
+      typeof decisionMainMatterLabelFinal==='function'?decisionMainMatterLabelFinal(row):'',
+      row.protocolHeader,row.pointTitle,row.title,row.documentTitle
+    ].join(' ');
+  const meetingText=row?.isMeeting&&typeof decisionMeetingSearchTextOnDemandFinal==='function'
+    ?decisionMeetingSearchTextOnDemandFinal(row)
+    :row.meetingSearchText;
+  const score=fuzzySearchWeightedScore(q,[
+    [matterTitle,12],
+    [[row.point,row.diary,row.caseNumber].join(' '),7],
+    [[row.body,row.result,row.proposalType].join(' '),4],
+    [[row.description,row.abstractText].join(' '),2.5],
+    [row.fullDecisionText,1.5],
+    [meetingText,row?.isMeeting?1:1.5]
+  ]);
+  decisionPointSearchScoreCacheFinal.set(row,{query:q,score});
+  return score;
+}
+
 decisionPointSearchMatches=function(row){
   const q=decisionSearchNormalizeFinal(decisionSearchQuery);
   if(!q)return true;

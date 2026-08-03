@@ -119,7 +119,16 @@ function filteredDecisionPointRows(){const organs=selectedDecisionValues('decisi
 function decisionPointCompare(a,b){const an=Number(a),bn=Number(b);if(Number.isFinite(an)&&Number.isFinite(bn)&&an!==bn)return an-bn;return String(a).localeCompare(String(b),'sv',{numeric:true,sensitivity:'base'});}
 function decisionSortValue(row,col){if(['voteCount','yes','no','abstain','absent'].includes(col))return Number(row[col])||0;if(col==='result')return decisionDisplay('result',row.result);if(col==='title')return row.body||row.title||'';if(col==='pointTitle')return row.pointTitle||'';return row.date||'';}
 function decisionSortCompare(a,b,col=decisionSortColumn){const av=decisionSortValue(a,col),bv=decisionSortValue(b,col);let cmp=typeof av==='number'&&typeof bv==='number'?av-bv:String(av).localeCompare(String(bv),'sv',{numeric:true,sensitivity:'base'});if(cmp===0)cmp=String(a.date).localeCompare(String(b.date),'sv',{numeric:true})||String(a.body).localeCompare(String(b.body),'sv',{numeric:true,sensitivity:'base'})||String(a.title).localeCompare(String(b.title),'sv',{numeric:true,sensitivity:'base'})||decisionPointCompare(a.point,b.point)||a.docIndex-b.docIndex;return decisionSortDir==='desc'?-cmp:cmp;}
-function sortedDecisionPointRows(rows=filteredDecisionPointRows()){return [...rows].sort((a,b)=>decisionSortCompare(a,b));}
+function sortedDecisionPointRows(rows=filteredDecisionPointRows()){
+  const q=typeof decisionSearchNormalizeFinal==='function'?decisionSearchNormalizeFinal(decisionSearchQuery):fuzzySearchNormalize(decisionSearchQuery);
+  return [...rows].sort((a,b)=>{
+    if(q&&typeof decisionPointSearchRelevanceFinal==='function'){
+      const relevance=decisionPointSearchRelevanceFinal(b,q)-decisionPointSearchRelevanceFinal(a,q);
+      if(relevance)return relevance;
+    }
+    return decisionSortCompare(a,b);
+  });
+}
 function decisionSortIndicator(col){return decisionSortColumn===col?(decisionSortDir==='asc'?' \u25b2':' \u25bc'):'';}
 function decisionSortableHeader(col,label){return `<th data-decision-sort="${esc(col)}" class="decision-sortable" role="button" tabindex="0" aria-sort="${decisionSortColumn===col?(decisionSortDir==='asc'?'ascending':'descending'):'none'}">${esc(label+decisionSortIndicator(col))}</th>`;}
 function setDecisionSort(col){if(decisionSortColumn===col)decisionSortDir=decisionSortDir==='asc'?'desc':'asc';else{decisionSortColumn=col;decisionSortDir=['voteCount','yes','no','abstain','absent'].includes(col)?'desc':'asc';}resetDecisionPage();renderDecisionView();}

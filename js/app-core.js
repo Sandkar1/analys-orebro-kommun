@@ -416,4 +416,41 @@ function fuzzySearchTextMatches(text,query){
   return queryTokens.every(queryToken=>textTokens.some(textToken=>fuzzySearchTokenMatches(queryToken,textToken)));
 }
 
+function fuzzySearchFieldScore(text,query){
+  const q=fuzzySearchNormalize(query),t=fuzzySearchNormalize(text);
+  if(!q||!t)return 0;
+  if(t===q)return 1000;
+  const queryTokens=q.split(' ').filter(Boolean);
+  if(!queryTokens.length||queryTokens.length>6)return t.includes(q)?700:0;
+  const textTokens=[...new Set(t.split(' ').filter(Boolean))];
+  const phraseIndex=t.indexOf(q);
+  let score=phraseIndex===0?900:phraseIndex>0?Math.max(620,780-Math.min(phraseIndex,160)):0;
+  let tokenScore=0;
+  for(const queryToken of queryTokens){
+    let best=0;
+    for(const textToken of textTokens){
+      if(textToken===queryToken)best=Math.max(best,180);
+      else if(textToken.startsWith(queryToken))best=Math.max(best,155);
+      else if(queryToken.length>=5&&queryToken.startsWith(textToken)&&queryToken.length-textToken.length<=2)best=Math.max(best,125);
+      else if(queryToken.length>=4&&textToken.length>=4&&Math.abs(queryToken.length-textToken.length)<=(queryToken.length>=8?2:1)&&fuzzySearchDistanceWithin(queryToken,textToken,queryToken.length>=8?2:1))best=Math.max(best,105);
+      else if(fuzzySearchTokenMatches(queryToken,textToken))best=Math.max(best,55);
+    }
+    if(!best)return score;
+    tokenScore+=best;
+  }
+  return Math.max(score,220+tokenScore);
+}
+
+function fuzzySearchWeightedScore(query,fields){
+  let best=0,support=0;
+  (fields||[]).forEach(field=>{
+    const value=Array.isArray(field)?field[0]:field;
+    const weight=Array.isArray(field)?Number(field[1])||1:1;
+    const weighted=fuzzySearchFieldScore(value,query)*weight;
+    if(weighted>best){support+=best;best=weighted;}
+    else support+=weighted;
+  });
+  return best+Math.min(support*.08,250);
+}
+
 

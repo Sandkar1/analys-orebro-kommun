@@ -213,6 +213,27 @@ function handleDecisionActivityFilterChange(id){
   renderDecisionActivityView();
 }
 
+const decisionActivitySearchScoreCacheFinal=new WeakMap();
+function decisionActivitySearchRelevanceFinal(row,query=decisionActivitySearchQuery){
+  const q=decisionSearchNormalizeFinal(query);
+  if(!q)return 0;
+  const cached=decisionActivitySearchScoreCacheFinal.get(row);
+  if(cached?.query===q)return cached.score;
+  const score=fuzzySearchWeightedScore(q,[
+    [row.title,12],
+    [row.sourceTitle,10],
+    [(row.headings||[]).join(' '),7],
+    [[row.id,row.caseNumber,...(row.caseNumbersDetected||[])].join(' '),6],
+    [[row.type,decisionActivityTypeLabel(row.type),row.party,row.organ,row.politicalOwner,row.officialOwner,row.answeredBy,row.sourceSection].join(' '),4],
+    [row.summary,2.5],
+    [(row.importantPoints||[]).join(' '),2],
+    [(row.responsibilityLines||[]).join(' '),1.5],
+    [(row.datesDetected||[]).join(' '),1]
+  ]);
+  decisionActivitySearchScoreCacheFinal.set(row,{query:q,score});
+  return score;
+}
+
 function filteredDecisionActivityRows(){
   ensureMunicipalDocumentData();
   const q=decisionSearchNormalizeFinal(decisionActivitySearchQuery);
@@ -223,10 +244,7 @@ function filteredDecisionActivityRows(){
   return decisionActivityRows.filter(row=>{
     if(!decisionActivityIncludedByDate(row)||types.length&&!types.includes(row.type)||parties.length&&!parties.includes(row.party)||politicalOwners.length&&!politicalOwners.includes(row.politicalOwner)||officialOwners.length&&!officialOwners.includes(row.officialOwner))return false;
     if(!q)return true;
-    const text=decisionSearchNormalizeFinal([
-      row.type,row.title,row.summary,...(row.importantPoints||[]),row.politicalOwner,row.officialOwner,row.answeredBy,row.party,row.organ,row.sourceSection,row.sourceTitle,row.id,row.caseNumber,...(row.headings||[]),...(row.caseNumbersDetected||[]),...(row.datesDetected||[]),...(row.responsibilityLines||[])
-    ].join(' '));
-    return typeof fuzzySearchTextMatches==='function'?fuzzySearchTextMatches(text,q):text.includes(q);
+    return decisionActivitySearchRelevanceFinal(row,q)>0;
   });
 }
 
@@ -246,7 +264,14 @@ function decisionActivitySortCompare(a,b,col=decisionActivitySortColumn){
 }
 
 function sortedDecisionActivityRows(rows=filteredDecisionActivityRows()){
-  return [...rows].sort((a,b)=>decisionActivitySortCompare(a,b));
+  const q=decisionSearchNormalizeFinal(decisionActivitySearchQuery);
+  return [...rows].sort((a,b)=>{
+    if(q){
+      const relevance=decisionActivitySearchRelevanceFinal(b,q)-decisionActivitySearchRelevanceFinal(a,q);
+      if(relevance)return relevance;
+    }
+    return decisionActivitySortCompare(a,b);
+  });
 }
 
 function decisionActivitySortIndicator(col){
