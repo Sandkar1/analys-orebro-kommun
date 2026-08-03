@@ -1652,6 +1652,25 @@ td.num{
   display:none;
 }
 
+.raw-invalid-vote-note{
+  margin:3px 0 9px;
+  color:#60717a;
+  font-size:12px;
+  line-height:1.35;
+}
+
+.raw-invalid-vote-note sup,
+.raw-invalid-vote-marker{
+  color:var(--accent);
+  font-size:10px;
+  font-weight:800;
+}
+
+.raw-invalid-vote-marker{
+  margin-left:2px;
+  cursor:help;
+}
+
 .raw-mini-pager{
   display:flex;
   align-items:center;
