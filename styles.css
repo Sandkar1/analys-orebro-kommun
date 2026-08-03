@@ -1001,10 +1001,12 @@ select[multiple]{
   margin:0 0 12px;
 }
 
+.raw-filter-locks,
 .decision-filter-locks{
   margin:8px 0 12px;
 }
 
+.raw-filter-locks[hidden],
 .decision-filter-locks[hidden],
 .decision-activity-filter-locks[hidden]{
   display:none;
