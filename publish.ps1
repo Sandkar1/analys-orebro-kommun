@@ -1,5 +1,6 @@
 param(
-  [string]$Message = ""
+  [string]$Message = "",
+  [string]$Remote = "origin"
 )
 
 $ErrorActionPreference = "Stop"
@@ -43,6 +44,11 @@ if ([string]::IsNullOrWhiteSpace($branch)) {
   throw "Cannot publish from a detached HEAD. Check out a branch first."
 }
 
+$remoteUrl = Invoke-GitCapture -Arguments @("remote", "get-url", $Remote)
+Write-Host "Publishing $branch to $Remote ($remoteUrl)..."
+Write-Host "Fetching the latest remote changes..."
+$null = Invoke-GitCapture -Arguments @("fetch", "--prune", $Remote)
+
 $changes = Invoke-GitCapture -Arguments @("status", "--porcelain=v1", "--untracked-files=all")
 $changeCount = @($changes -split "`r?`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count
 
@@ -72,14 +78,55 @@ else {
   Write-Host "No local changes to commit."
 }
 
+$remoteRef = "$Remote/$branch"
+$remoteRefExists = $true
+try {
+  $null = Invoke-GitCapture -Arguments @("show-ref", "--verify", "--quiet", "refs/remotes/$Remote/$branch")
+}
+catch {
+  $remoteRefExists = $false
+}
+
+if ($remoteRefExists) {
+  $counts = Invoke-GitCapture -Arguments @("rev-list", "--left-right", "--count", "$remoteRef...HEAD")
+  $parts = @($counts -split "\s+" | Where-Object { $_ -ne "" })
+  $behind = if ($parts.Count -ge 1) { [int]$parts[0] } else { 0 }
+  $ahead = if ($parts.Count -ge 2) { [int]$parts[1] } else { 0 }
+
+  if ($behind -gt 0) {
+    Write-Host "The remote branch is $behind commit(s) ahead. Rebasing $ahead local commit(s)..."
+    try {
+      $null = Invoke-GitCapture -Arguments @("rebase", $remoteRef)
+      Write-Host "Local commits were successfully replayed on top of $remoteRef."
+    }
+    catch {
+      $rebaseError = $_.Exception.Message
+      $previousPreference = $ErrorActionPreference
+      $ErrorActionPreference = "Continue"
+      try {
+        $null = & git -C $RepoRoot rebase --abort 2>&1
+      }
+      finally {
+        $ErrorActionPreference = $previousPreference
+      }
+      throw "Automatic synchronization with $remoteRef produced a conflict. The rebase was aborted and local commits were preserved. Resolve the remote changes manually, then run publish.ps1 again.`n$rebaseError"
+    }
+  }
+}
+
 $upstream = Invoke-GitCapture -Arguments @("for-each-ref", "--format=%(upstream:short)", "refs/heads/$branch")
+$pushArguments = @("push", "--porcelain")
 if ([string]::IsNullOrWhiteSpace($upstream)) {
-  $remote = "origin"
-  $null = Invoke-GitCapture -Arguments @("remote", "get-url", $remote)
-  $null = Invoke-GitCapture -Arguments @("push", "--porcelain", "--set-upstream", $remote, $branch)
-  Write-Host "Pushed $branch and set upstream to $remote/$branch."
+  $pushArguments += "--set-upstream"
 }
-else {
-  $null = Invoke-GitCapture -Arguments @("push", "--porcelain")
-  Write-Host "Pushed $branch to $upstream."
+$pushArguments += @($Remote, "HEAD:refs/heads/$branch")
+$null = Invoke-GitCapture -Arguments $pushArguments
+
+$localCommit = Invoke-GitCapture -Arguments @("rev-parse", "HEAD")
+$remoteLine = Invoke-GitCapture -Arguments @("ls-remote", "--heads", $Remote, "refs/heads/$branch")
+$remoteCommit = if ([string]::IsNullOrWhiteSpace($remoteLine)) { "" } else { @($remoteLine -split "\s+")[0] }
+if ($remoteCommit -ne $localCommit) {
+  throw "Push completed without an error, but verification failed. Local HEAD is $localCommit while $Remote/$branch is $remoteCommit."
 }
+
+Write-Host "Published and verified commit $($localCommit.Substring(0, 7)) on $Remote/$branch."
