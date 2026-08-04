@@ -3110,6 +3110,10 @@ table:not(.input-table) .decision-selectable-row:nth-child(even):hover td{
   transform:none;
 }
 
+.raw-table-wrap.table-progressive-loading tbody tr{
+  animation:none;
+}
+
 .raw-table-wrap.table-results-updating::before{
   opacity:1;
   transform:scaleX(.78);

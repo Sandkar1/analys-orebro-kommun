@@ -12,7 +12,10 @@ function progressiveSearchWrapsFinal(tableIds,active){
     const wrap=$(id)?.closest('.raw-table-wrap');
     if(!wrap)return;
     wrap.classList.toggle('table-progressive-loading',active);
-    if(active)wrap.scrollTop=0;
+    if(active){
+      wrap.classList.remove('table-results-refreshed');
+      wrap.scrollTop=0;
+    }
   });
 }
 
@@ -25,8 +28,6 @@ function progressiveSearchFinishFinal(key,job,inputId,tableIds){
     const wrap=$(id)?.closest('.raw-table-wrap');
     if(!wrap)return;
     wrap.classList.remove('table-results-refreshed');
-    void wrap.offsetWidth;
-    wrap.classList.add('table-results-refreshed');
   });
 }
 
@@ -219,3 +220,33 @@ progressiveSearchHandlersFinal.set('decision-activity',async job=>{
   state.visibleRows=rows;
   renderDecisionActivityView();
 });
+
+/* Reuse one municipal-data preparation job. The app preloads this data in the
+   background, and an opened/restored detail tab may request it at the same time. */
+const ensureDecisionDataProgressivelyBeforeSingleFlightFinal=ensureDecisionDataProgressively;
+let decisionDataProgressivePromiseFinal=null;
+ensureDecisionDataProgressively=function(){
+  if(decisionReady)return Promise.resolve();
+  if(decisionDataProgressivePromiseFinal)return decisionDataProgressivePromiseFinal;
+  decisionDataProgressivePromiseFinal=Promise.resolve(ensureDecisionDataProgressivelyBeforeSingleFlightFinal())
+    .finally(()=>{decisionDataProgressivePromiseFinal=null;});
+  return decisionDataProgressivePromiseFinal;
+};
+
+/* List-level counters and loading text do not belong to an opened detail tab. */
+function syncDecisionListDetailChromeFinal(){
+  const detail=decisionActiveTabState()?.kind==='decision'&&!$('decisionDetailPane')?.hidden;
+  const overview=$('decisionOverview');
+  const toolbar=$('decisionPage')?.closest('.decision-toolbar');
+  const status=$('decisionStatus');
+  if(overview)overview.hidden=detail;
+  if(toolbar)toolbar.hidden=detail;
+  if(detail&&status)status.hidden=true;
+}
+
+const renderDecisionViewBeforeListDetailChromeFinal=renderDecisionView;
+renderDecisionView=function(){
+  const result=renderDecisionViewBeforeListDetailChromeFinal();
+  syncDecisionListDetailChromeFinal();
+  return result;
+};
