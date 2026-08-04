@@ -3105,6 +3105,11 @@ table:not(.input-table) .decision-selectable-row:nth-child(even):hover td{
   transform:translateY(2px);
 }
 
+.raw-table-wrap.table-results-updating.table-progressive-loading tbody{
+  opacity:1;
+  transform:none;
+}
+
 .raw-table-wrap.table-results-updating::before{
   opacity:1;
   transform:scaleX(.78);

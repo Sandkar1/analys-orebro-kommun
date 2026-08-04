@@ -4,12 +4,13 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$GitConfigArguments = @("-c", "core.safecrlf=false")
 
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
   throw "Git is not installed or is not available in PATH."
 }
 
-$repoResult = & git -C $PSScriptRoot rev-parse --show-toplevel 2>&1
+$repoResult = & git @GitConfigArguments -C $PSScriptRoot rev-parse --show-toplevel 2>&1
 if ($LASTEXITCODE -ne 0) {
   throw "publish.ps1 is not inside a Git repository.`n$($repoResult -join "`n")"
 }
@@ -24,7 +25,7 @@ function Invoke-GitCapture {
   $previousPreference = $ErrorActionPreference
   $ErrorActionPreference = "Continue"
   try {
-    $output = & git -C $RepoRoot @Arguments 2>&1
+    $output = & git @GitConfigArguments -C $RepoRoot @Arguments 2>&1
     $exitCode = $LASTEXITCODE
   }
   finally {
@@ -104,7 +105,7 @@ if ($remoteRefExists) {
       $previousPreference = $ErrorActionPreference
       $ErrorActionPreference = "Continue"
       try {
-        $null = & git -C $RepoRoot rebase --abort 2>&1
+        $null = & git @GitConfigArguments -C $RepoRoot rebase --abort 2>&1
       }
       finally {
         $ErrorActionPreference = $previousPreference
