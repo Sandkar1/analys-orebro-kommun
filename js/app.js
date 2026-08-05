@@ -1,7 +1,7 @@
 ﻿let confirmResolver=null,confirmKeyHandler=null,confirmLastFocus=null;
 function closeConfirm(result){const overlay=$('confirmOverlay');if(confirmKeyHandler){document.removeEventListener('keydown',confirmKeyHandler);confirmKeyHandler=null;}overlay.hidden=true;document.body.style.overflow='';if(confirmLastFocus&&typeof confirmLastFocus.focus==='function')confirmLastFocus.focus();const resolve=confirmResolver;confirmResolver=null;confirmLastFocus=null;if(resolve)resolve(result);}
 function openResetConfirm(){if(confirmResolver)return Promise.resolve(false);const overlay=$('confirmOverlay');const accept=$('confirmAccept');const cancel=$('confirmCancel');confirmLastFocus=document.activeElement;overlay.hidden=false;document.body.style.overflow='hidden';return new Promise(resolve=>{confirmResolver=resolve;confirmKeyHandler=e=>{if(e.key==='Escape'){e.preventDefault();closeConfirm(false);}};document.addEventListener('keydown',confirmKeyHandler);accept.focus();});}
-let sessionResolver=null,sessionKeyHandler=null,sessionLastFocus=null,decisionViewMounted=false;
+let sessionResolver=null,sessionKeyHandler=null,sessionLastFocus=null,decisionViewMounted=false,decisionViewMountPromise=null,decisionViewMountScheduled=false;
 function closeSessionDialog(result){const overlay=$('sessionOverlay');if(sessionKeyHandler){document.removeEventListener('keydown',sessionKeyHandler);sessionKeyHandler=null;}overlay.hidden=true;document.body.style.overflow='';if(sessionLastFocus&&typeof sessionLastFocus.focus==='function')sessionLastFocus.focus();const resolve=sessionResolver;sessionResolver=null;sessionLastFocus=null;if(resolve)resolve(result);}
 function setSessionMessage(message){$('sessionMessage').textContent=message;}
 function selectEntireSessionField(){const field=$('sessionField');field.focus();field.setSelectionRange(0,field.value.length);}
@@ -43,7 +43,46 @@ function u16(a,v){a.push(v&255,(v>>8)&255);}
 function u32(a,v){u16(a,v&65535);u16(a,(v>>>16)&65535);}
 function bytes(s){return [...new TextEncoder().encode(s)];}
 function zip(files){const out=[],central=[];let offset=0;for(const f of files){const name=bytes(f.name),data=bytes(f.data),crc=crc32(data);u32(out,0x04034b50);u16(out,20);u16(out,0);u16(out,0);u16(out,0);u16(out,0);u32(out,crc);u32(out,data.length);u32(out,data.length);u16(out,name.length);u16(out,0);out.push(...name,...data);const head=[];u32(head,0x02014b50);u16(head,20);u16(head,20);u16(head,0);u16(head,0);u16(head,0);u16(head,0);u32(head,crc);u32(head,data.length);u32(head,data.length);u16(head,name.length);u16(head,0);u16(head,0);u16(head,0);u16(head,0);u32(head,0);u32(head,offset);head.push(...name);central.push(...head);offset=out.length;}const centralOffset=out.length;out.push(...central);u32(out,0x06054b50);u16(out,0);u16(out,0);u16(out,files.length);u16(out,files.length);u32(out,central.length);u32(out,centralOffset);u16(out,0);return new Blob([new Uint8Array(out)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});}
-async function setTopView(name){if(['decision','decisionActivity'].includes(name)&&!municipalWorkEnabled)name='calculator';const calc=name==='calculator',raw=name==='raw',decision=name==='decision',decisionActivity=name==='decisionActivity',activeView=calc?$('calculatorView'):raw?$('rawDataView'):decision?$('decisionView'):$('decisionActivityView');$('calculatorView').classList.toggle('active',calc);$('rawDataView').classList.toggle('active',raw);$('decisionView').classList.toggle('active',decision);$('decisionActivityView').classList.toggle('active',decisionActivity);$('calculatorTopTab').classList.toggle('active',calc);$('rawTopTab').classList.toggle('active',raw);$('decisionTopTab').classList.toggle('active',decision);$('decisionActivityTopTab').classList.toggle('active',decisionActivity);animateUiRegion(activeView);if(raw&&!rawReady){setUiRegionBusy(activeView,true);try{await ensureRawData();}finally{setUiRegionBusy(activeView,false);}}if((decision||decisionActivity)&&!decisionViewMounted){setUiRegionBusy(activeView,true);try{if(!decisionReady){$('decisionStatus').innerHTML='<span class="decision-load-spinner" aria-hidden="true"></span><span>Förbereder kommunal protokolldata…</span>';$('decisionActivityStatus').innerHTML='<span class="decision-load-spinner" aria-hidden="true"></span><span>Förbereder kommunala styrdokument…</span>';$('decisionBody').innerHTML='';$('decisionActivityBody').innerHTML='';await new Promise(requestAnimationFrame);}await ensureDecisionPackLoaded();await ensureDecisionDataProgressively();renderDecisionView();if(decisionActivity)renderDecisionActivityView();decisionViewMounted=true;}catch(e){const message=e?.message||'Kunde inte ladda kommunal data.';$('decisionStatus').textContent=message;$('decisionActivityStatus').textContent=message;}finally{setUiRegionBusy(activeView,false);}}else if(decisionActivity&&decisionReady){renderDecisionActivityView();}}
+function startDecisionViewMount(){
+  if(decisionViewMounted)return Promise.resolve();
+  if(decisionViewMountPromise)return decisionViewMountPromise;
+  decisionViewMountPromise=(async()=>{
+    await ensureDecisionPackLoaded();
+    await ensureDecisionDataProgressively();
+    decisionViewMounted=true;
+    if(currentTopView()==='decision')renderDecisionView();
+  })().catch(error=>{
+    if(currentTopView()==='decision'){
+      $('decisionStatus').hidden=false;
+      $('decisionStatus').textContent=error?.message||'Kunde inte ladda kommunal data.';
+    }
+  }).finally(()=>{decisionViewMountPromise=null;});
+  return decisionViewMountPromise;
+}
+function scheduleDecisionViewMountAfterPaint(){
+  if(decisionViewMounted||decisionViewMountPromise||decisionViewMountScheduled)return;
+  decisionViewMountScheduled=true;
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    decisionViewMountScheduled=false;
+    if(currentTopView()==='decision')startDecisionViewMount();
+  }));
+}
+async function setTopView(name){
+  if(['decision','decisionActivity'].includes(name)&&!municipalWorkEnabled)name='calculator';
+  const calc=name==='calculator',raw=name==='raw',decision=name==='decision',decisionActivity=name==='decisionActivity',activeView=calc?$('calculatorView'):raw?$('rawDataView'):decision?$('decisionView'):$('decisionActivityView');
+  $('calculatorView').classList.toggle('active',calc);$('rawDataView').classList.toggle('active',raw);$('decisionView').classList.toggle('active',decision);$('decisionActivityView').classList.toggle('active',decisionActivity);
+  $('calculatorTopTab').classList.toggle('active',calc);$('rawTopTab').classList.toggle('active',raw);$('decisionTopTab').classList.toggle('active',decision);$('decisionActivityTopTab').classList.toggle('active',decisionActivity);
+  animateUiRegion(activeView);
+  if(raw&&!rawReady){setUiRegionBusy(activeView,true);try{await ensureRawData();}finally{setUiRegionBusy(activeView,false);}}
+  if(decision){
+    renderMunicipalTableShellFinal('decision');
+    if(decisionReady)renderDecisionView();
+    scheduleDecisionViewMountAfterPaint();
+  }else if(decisionActivity){
+    renderMunicipalTableShellFinal('decisionActivity');
+    renderDecisionActivityView();
+  }
+}
 function setExportXlsxBusy(busy){const btn=$('exportViewXlsx');if(!btn)return;if(busy){btn.dataset.previousHtml=btn.innerHTML;btn.dataset.previousDisabled=btn.disabled?'1':'0';btn.disabled=true;btn.classList.add('is-exporting');btn.setAttribute('aria-busy','true');btn.innerHTML='<span class="decision-load-spinner" aria-hidden="true"></span><span>Exporterar...</span>';return;}btn.classList.remove('is-exporting');btn.removeAttribute('aria-busy');btn.disabled=btn.dataset.previousDisabled==='1';btn.innerHTML=btn.dataset.previousHtml||'Exportera till Excel';delete btn.dataset.previousHtml;delete btn.dataset.previousDisabled;}
 function waitForExportPaint(){return new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));}
 async function exportCurrentViewXlsx(){const btn=$('exportViewXlsx');if(btn?.classList.contains('is-exporting'))return;setExportXlsxBusy(true);try{await waitForExportPaint();const view=currentTopView();if(view==='raw')await exportRawXlsx();else if(view==='calculator')await exportXlsx();else if(view==='decision')await exportDecisionXlsx();else if(view==='decisionActivity')await exportDecisionActivityXlsx();else showError('Export till Excel är inte tillgänglig för den aktiva vyn.');}finally{setExportXlsxBusy(false);}}
@@ -80,9 +119,7 @@ async function initAppFromUrlHash(){
     renderRawDraft();
     scheduleUrlHashUpdate(0);
   }
-  // Prepare the municipal index after the first paint. Opening the municipal tab
-  // then only renders an already prepared view instead of indexing the full pack.
-  if(municipalWorkEnabled)setTimeout(()=>{ensureDecisionPackLoaded().then(()=>ensureDecisionDataProgressively()).then(()=>scheduleUrlHashUpdate()).catch(()=>{});},0);
+  // Municipal datasets are loaded on demand after their table shell has painted.
 }
 initAppFromUrlHash();
 

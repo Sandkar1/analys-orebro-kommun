@@ -188,6 +188,11 @@ p{
   font-size:15px;
 }
 
+.main-tab-description{
+  margin:0 0 14px;
+  line-height:1.45;
+}
+
 .session-toolbar{
   display:flex;
   justify-content:flex-end;
@@ -917,7 +922,9 @@ button,
   min-width:0;
 }
 
-#decisionDecisionSearch{
+#rawSearch,
+#decisionDecisionSearch,
+#decisionActivitySearch{
   font-size:13px;
 }
 
@@ -1618,7 +1625,7 @@ td.num{
   display:grid;
   grid-template-columns:1fr;
   gap:14px;
-  margin-top:12px;
+  margin-top:0;
 }
 
 .raw-panel{
@@ -3084,6 +3091,10 @@ table:not(.input-table) .decision-selectable-row:nth-child(even):hover td{
   contain-intrinsic-size:auto 540px;
 }
 
+.raw-table-wrap.table-shell-awaiting-data{
+  min-height:min(540px,60vh);
+}
+
 .raw-table-wrap::before{
   content:"";
   position:absolute;
@@ -3279,6 +3290,63 @@ table:not(.input-table) .decision-selectable-row:nth-child(even):hover td{
   padding:8px 10px;
   border-radius:var(--radius);
   background:var(--cream);
+}
+
+.raw-status:empty{
+  display:none;
+}
+
+.main-table-progress{
+  display:block;
+  width:max-content;
+  max-width:100%;
+  min-width:88px;
+  min-height:1.4em;
+  margin:0 0 10px;
+  padding:0;
+  border:0;
+  border-radius:0;
+  color:var(--ink-soft);
+  background:transparent;
+  font-size:12px;
+  line-height:1.4;
+  font-weight:760;
+  font-variant-numeric:tabular-nums;
+  text-align:left;
+  white-space:nowrap;
+}
+
+.decision-toolbar .main-table-progress{
+  margin:0;
+}
+
+.decision-toolbar{
+  margin:0 0 10px;
+}
+
+/* The three data tabs share one vertical rhythm outside their tables. */
+#rawDataView > h2,
+#decisionView > h2,
+#decisionActivityPane > h2{
+  margin:0 0 8px;
+}
+
+#rawDataView > .raw-toolbar,
+#decisionView > #decisionFilters,
+#decisionActivityPane > .decision-activity-filters{
+  margin:0 0 12px;
+}
+
+#rawDataView > .raw-filter-locks,
+#decisionView > .decision-filter-locks,
+#decisionActivityPane > .decision-activity-filter-locks{
+  margin:0 0 12px;
+}
+
+#rawDataView > .raw-overview,
+#decisionView > .raw-overview,
+#decisionActivityListPane > .raw-overview{
+  margin:0 0 10px;
 }
 
 .meta{

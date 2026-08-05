@@ -7,7 +7,7 @@
 <link rel="icon" href="assets/election-analysis-icon.svg" type="image/svg+xml">
 <link rel="alternate icon" href="assets/app_icon_modern_compressed.jpg" type="image/jpeg">
 <link rel="apple-touch-icon" href="assets/app_icon_modern_compressed.jpg">
-<link rel="stylesheet" href="styles.css?v=20260804-1">
+<link rel="stylesheet" href="styles.css?v=20260805-5">
 <link rel="preload" href="data/municipal-protocol-data-orebro-v2.part1.js?v=20260715-1" as="script" fetchpriority="low">
 <link rel="preload" href="data/municipal-protocol-data-orebro-v2.part2.js?v=20260715-1" as="script" fetchpriority="low">
 </head>
@@ -110,6 +110,7 @@
 <section id="rawDataView" class="view">
 <a class="raw-source-note" href="https://www.val.se/valresultat-och-statistik/statistik-och-data/radata-fran-val-2002-2022" target="_blank" rel="noopener noreferrer">Källa: Valmyndigheten</a>
 <h2>Historisk valdata</h2>
+<p class="muted main-tab-description">Sökbara historiska valresultat för riksdags-, region- och kommunalval.</p>
 <section class="raw-toolbar">
 <div class="field">
 <label for="rawYear">År</label>
@@ -139,7 +140,7 @@
 <div class="field">
 <label for="rawSearch">Sök</label>
 <div class="table-search-box">
-<input id="rawSearch" type="search" autocomplete="off">
+<input id="rawSearch" type="search" autocomplete="off" placeholder="Sök år, valtyp, region, kommun eller parti">
 <span class="table-search-spinner" aria-hidden="true"></span>
 </div>
 </div>
@@ -149,7 +150,7 @@
 </section>
 <div id="rawStatus" class="raw-status">
 </div>
-<div id="rawCount" class="raw-count">
+<div id="rawCount" class="raw-count main-table-progress">
 </div>
 <section class="raw-panels">
 <section class="raw-panel">
@@ -162,7 +163,7 @@
 <button id="rawAddParties" class="secondary">Lägg till som enskilda partier</button>
 <button id="rawAddGroup" class="secondary">Lägg till som samverkansgrupp</button>
 </section>
-<div class="raw-table-controls">
+<div class="raw-table-controls" hidden>
 <div class="raw-mini-pager raw-eligible-pager">
 <button id="rawEligiblePrev" class="secondary raw-mini-button" type="button">‹</button>
 <span id="rawEligiblePage" class="raw-mini-page"></span>
@@ -183,7 +184,7 @@
 <div id="rawIneligibleCount" class="raw-subcount">
 </div>
 <p id="rawInvalidVoteNote" class="raw-invalid-vote-note" hidden><sup>*</sup> Ingår i valdeltagandet som en avgiven röst, men inte i summan giltiga partiröster eller partiernas procentandelar.</p>
-<div class="raw-table-controls">
+<div class="raw-table-controls" hidden>
 <div class="raw-mini-pager">
 <button id="rawIneligiblePrev" class="secondary raw-mini-button" type="button">‹</button>
 <span id="rawIneligiblePage" class="raw-mini-page"></span>
@@ -227,7 +228,7 @@
 <section id="decisionView" class="view">
 <a class="raw-source-note" href="https://www.orebro.se/kommun--politik/politik--beslut.html" target="_blank" rel="noopener noreferrer">Källa: Örebro kommun</a>
 <h2>Örebro kommuns beslut</h2>
-<p class="muted">Visar beslutspunkter, yrkanden och formella voteringar från offentliga kommunala protokoll.</p>
+<p class="muted main-tab-description">Visar beslutspunkter, yrkanden och formella voteringar från offentliga kommunala protokoll.</p>
 <section class="raw-filter-row" id="decisionFilters">
 <div class="field decision-date-field">
 <label>Datum</label>
@@ -242,7 +243,7 @@
 </div>
 <div class="field decision-organ-field">
 <label for="decisionOrgan">Organ</label>
-<select id="decisionOrgan" data-col="organ"></select>
+<select id="decisionOrgan" data-col="organ"><option value="">Alla</option></select>
 </div>
 <div class="field decision-type-field">
 <label for="decisionProposalType">Ärendetyp</label>
@@ -255,15 +256,15 @@
 </div>
 <div class="field decision-party-field">
 <label for="decisionParty">Parti</label>
-<select id="decisionParty" data-col="party"></select>
+<select id="decisionParty" data-col="party"><option value="">Alla</option></select>
 </div>
 <div class="field decision-member-field">
 <label for="decisionMember">Ledamot/ersättare</label>
-<select id="decisionMember" data-col="member"></select>
+<select id="decisionMember" data-col="member"><option value="">Alla</option></select>
 </div>
 <div class="field decision-vote-field">
 <label for="decisionVote">Röstning</label>
-<select id="decisionVote" data-col="vote"></select>
+<select id="decisionVote" data-col="vote"><option value="">Alla</option></select>
 </div>
 <div class="field decision-result-field">
 <label for="decisionResult">Resultat</label>
@@ -287,11 +288,11 @@
 <div class="raw-page-size-row decision-toolbar">
 <div class="decision-pager">
 <button id="decisionPrev" class="secondary" type="button">‹</button>
-<span id="decisionPage" class="raw-mini-page"></span>
+<span id="decisionPage" class="raw-mini-page main-table-progress"></span>
 <button id="decisionNext" class="secondary" type="button">›</button>
 </div>
 </div>
-<div id="decisionStatus" class="raw-status">Laddar kommunala protokoll...</div>
+<div id="decisionStatus" class="raw-status" hidden></div>
 <div id="decisionMasterPane" class="raw-table-wrap">
 <table>
 <thead id="decisionHead"></thead>
@@ -315,7 +316,7 @@
 <section id="decisionActivityPane" class="decision-activity-pane">
 <a class="raw-source-note decision-activity-source-note" href="https://www.orebro.se/kommun--politik/politik--beslut.html" target="_blank" rel="noopener noreferrer">Källa: Örebro kommun</a>
 <h2>Örebro kommuns styrdokument</h2>
-<p class="muted">Sökbara kommunala styrdokument, riktlinjer, policyer, program, planer och rapporter.</p>
+<p class="muted main-tab-description">Sökbara kommunala styrdokument, riktlinjer, policyer, program, planer och rapporter.</p>
 <section class="raw-filter-row decision-activity-filters">
 <div class="field decision-date-field">
 <label>Datum</label>
@@ -362,7 +363,7 @@
 <div id="decisionActivityTabs" class="decision-tabs"></div>
 <div id="decisionActivityListPane">
 <div id="decisionActivityOverview" class="raw-overview"></div>
-<div id="decisionActivityStatus" class="raw-status"></div>
+<div id="decisionActivityStatus" class="raw-status main-table-progress"></div>
 <div class="raw-table-wrap">
 <table>
 <thead id="decisionActivityHead"></thead>
@@ -448,10 +449,10 @@
 <script defer src="data/municipal-protocol-diary-data.js?v=20260624-1"></script>
 <script defer src="js/app-core.js?v=20260803-1"></script>
 <script defer src="js/calculator-tab.js?v=20260803-1"></script>
-<script defer src="js/historisk-valdata-tab.js"></script>
-<script defer src="js/municipal-protocols-tab.js?v=20260805-3"></script>
+<script defer src="js/historisk-valdata-tab.js?v=20260805-1"></script>
+<script defer src="js/municipal-protocols-tab.js?v=20260805-4"></script>
 <script defer src="js/search-performance.js?v=20260803-1"></script>
 <script defer src="js/municipal-documents-tab.js?v=20260803-1"></script>
-<script defer src="js/progressive-search.js?v=20260805-9"></script>
-<script defer src="js/app.js?v=20260626-1"></script></main></body></html>
+<script defer src="js/progressive-search.js?v=20260805-20"></script>
+<script defer src="js/app.js?v=20260805-3"></script></main></body></html>
 

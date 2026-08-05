@@ -3,7 +3,8 @@ const progressiveSearchJobsFinal=new Map();
 const progressiveSearchHandlersFinal=new Map();
 const scheduleTableSearchBeforeProgressiveFinal=scheduleTableSearch;
 
-const municipalDataWorkerSrcFinal='js/municipal-data-loader-worker.js?v=20260805-2';
+const municipalDataWorkerSrcFinal='js/municipal-data-loader-worker.js?v=20260805-3';
+const municipalProtocolPackByteSizesFinal=[24116161,5507978];
 function progressiveCreateDataWorkerFinal(){
   if(typeof Worker!=='function'||window.location.protocol==='file:')return null;
   try{return new Worker(municipalDataWorkerSrcFinal);}
@@ -16,21 +17,28 @@ async function decisionAssembleWorkerPartsFinal(parts){
   if(!part1||!part2)throw Error('Kommundatans delar kunde inte sättas samman.');
   const documents=(part1.d||[]).concat(part2.d||[]),voteRows=(part2.r||[]).slice(),memberRows=(part2.mr||[]).slice();
   const yieldUi=()=>new Promise(resolve=>requestAnimationFrame(resolve));
+  decisionUpdateInitialProgressFinal(45);
   await yieldUi();applyMunicipalProtocolMetadataCorrections(documents,memberRows);
+  decisionUpdateInitialProgressFinal(46);
   await yieldUi();
-  let cleanStarted=performance.now();
+  let cleanStarted=performance.now(),cleanIndex=0;
   for(const document of documents){
+    cleanIndex++;
     for(const field of ['ht','ad','bd'])if(document[field])document[field]=cleanMunicipalProtocolExtractedText(document[field]);
     for(const point of Object.keys(document.p||{}))document.p[point]=cleanMunicipalProtocolExtractedText(document.p[point]);
-    if(performance.now()-cleanStarted>=3){await yieldUi();cleanStarted=performance.now();}
+    if(performance.now()-cleanStarted>=3){
+      decisionUpdateInitialProgressFinal(46+(documents.length?cleanIndex/documents.length*3:3));
+      await yieldUi();cleanStarted=performance.now();
+    }
   }
-  await yieldUi();synchronizeMunicipalProtocolTitles(documents);
-  await yieldUi();pruneUnmatchedMunicipalAttendanceRows(documents,memberRows);
-  await yieldUi();disambiguateMunicipalProtocolDocumentIds(documents);
-  await yieldUi();disambiguateMunicipalDecisionPointIds(documents);
-  await yieldUi();repairMunicipalVoteEvents(documents,voteRows);
-  await yieldUi();repairMunicipalTruncatedVoteMeanings(documents);
-  await yieldUi();markMunicipalVoteCountConflicts(documents,voteRows);
+  decisionUpdateInitialProgressFinal(49);
+  await yieldUi();synchronizeMunicipalProtocolTitles(documents);decisionUpdateInitialProgressFinal(49.5);
+  await yieldUi();pruneUnmatchedMunicipalAttendanceRows(documents,memberRows);decisionUpdateInitialProgressFinal(50);
+  await yieldUi();disambiguateMunicipalProtocolDocumentIds(documents);decisionUpdateInitialProgressFinal(50.4);
+  await yieldUi();disambiguateMunicipalDecisionPointIds(documents);decisionUpdateInitialProgressFinal(50.8);
+  await yieldUi();repairMunicipalVoteEvents(documents,voteRows);decisionUpdateInitialProgressFinal(51.2);
+  await yieldUi();repairMunicipalTruncatedVoteMeanings(documents);decisionUpdateInitialProgressFinal(51.6);
+  await yieldUi();markMunicipalVoteCountConflicts(documents,voteRows);decisionUpdateInitialProgressFinal(52);
   await yieldUi();
   return {...part1,d:documents,r:voteRows,pr:part2.pr||[],mr:memberRows};
 }
@@ -38,10 +46,19 @@ async function decisionAssembleWorkerPartsFinal(parts){
 async function decisionLoadWithoutWorkerFinal(){
   if(window.municipalProtocolPack?.d?.length){
     decisionPack=window.municipalProtocolPack;
+    decisionUpdateInitialProgressFinal(52);
     return decisionPack;
   }
   let parts=window.municipalProtocolPackParts||{};
-  await Promise.all(municipalProtocolPackSrcs.map((src,index)=>parts[index+1]?Promise.resolve():loadScriptOnce(src)));
+  const totalBytes=municipalProtocolPackByteSizesFinal.reduce((sum,size)=>sum+size,0);
+  let loadedBytes=municipalProtocolPackByteSizesFinal.reduce((sum,size,index)=>sum+(parts[index+1]?size:0),0);
+  await Promise.all(municipalProtocolPackSrcs.map((src,index)=>{
+    if(parts[index+1])return Promise.resolve();
+    return loadScriptOnce(src).then(()=>{
+      loadedBytes+=municipalProtocolPackByteSizesFinal[index]||0;
+      decisionUpdateInitialProgressFinal(8+(totalBytes?loadedBytes/totalBytes*37:37));
+    });
+  }));
   parts=window.municipalProtocolPackParts||{};
   const assembled=await decisionAssembleWorkerPartsFinal(parts);
   decisionPack=window.municipalProtocolPack=assembled;
@@ -53,7 +70,10 @@ function decisionLoadWithWorkerFinal(worker){
     const parts={1:{},2:{}};
     worker.onmessage=async event=>{
       const message=event.data||{};
-      if(message.type==='meta')Object.assign(parts[message.part],message.value||{});
+      if(message.type==='load-progress'){
+        const total=Math.max(0,Number(message.totalBytes)||0),loaded=Math.max(0,Number(message.loadedBytes)||0);
+        decisionUpdateInitialProgressFinal(8+(total?Math.min(1,loaded/total)*37:0));
+      }else if(message.type==='meta')Object.assign(parts[message.part],message.value||{});
       else if(message.type==='chunk'){
         const target=parts[message.part];
         if(!Array.isArray(target[message.key]))target[message.key]=[];
@@ -71,7 +91,8 @@ function decisionLoadWithWorkerFinal(worker){
     };
     worker.onerror=event=>{worker.terminate();reject(Error(event.message||'Kommundatan kunde inte läsas in.'));};
     worker.postMessage({
-      sources:municipalProtocolPackSrcs.map(src=>new URL(src,window.location.href).href)
+      sources:municipalProtocolPackSrcs.map(src=>new URL(src,window.location.href).href),
+      sourceSizes:municipalProtocolPackByteSizesFinal
     });
   });
 }
@@ -81,6 +102,7 @@ ensureDecisionPackLoaded=async function(){
   if(decisionPack?.d?.length)return decisionPack;
   if(decisionPackWorkerPromiseFinal)return decisionPackWorkerPromiseFinal;
   decisionPackWorkerPromiseFinal=(async()=>{
+    decisionUpdateInitialProgressFinal(8);
     const worker=progressiveCreateDataWorkerFinal();
     if(worker){
       try{return await decisionLoadWithWorkerFinal(worker);}
@@ -111,16 +133,49 @@ function progressiveSliceExpiredFinal(started,budget=5){
   return performance.now()-started>=budget||progressiveInputPendingFinal();
 }
 
-function progressiveResultStatusFinal({active=false,matches=0,visible=0,index=0,total=0,selected=null}={}){
+function progressiveResultStatusFinal({active=false,matches=0,visible=0,index=0,total=0,selected=null,percentOverride=null,progressLabel='genomsökt'}={}){
   const matchCount=Math.max(0,Number(matches)||0),visibleCount=Math.max(0,Number(visible)||0);
   if(active){
-    const percent=total?Math.min(100,Math.floor(Math.max(0,Number(index)||0)/total*100)):100;
-    return `Söker… ${fmtInt(visibleCount)} visas · ${percent} % genomsökt`;
+    const calculated=total?Math.max(0,Number(index)||0)/total*100:0;
+    const percent=Math.min(100,Math.floor(percentOverride===null?calculated:Math.max(0,Number(percentOverride)||0)));
+    return `Visar ${fmtInt(visibleCount)} · ${percent} % ${progressLabel}`;
   }
-  if(!matchCount)return 'Inga träffar';
-  const parts=[`${fmtInt(visibleCount)} visas`];
-  if(selected!==null){const count=Math.max(0,Number(selected)||0);parts.push(`${fmtInt(count)} ${count===1?'vald':'valda'}`);}
-  return parts.join(' · ');
+  return `Visar ${fmtInt(matchCount?visibleCount:0)}`;
+}
+
+let decisionInitialProgressPercentFinal=0;
+let decisionInitialLoadCompleteFinal=false;
+let rawInitialLoadCompleteFinal=false;
+let decisionActivityInitialLoadCompleteFinal=false;
+
+function decisionUpdateInitialProgressFinal(percent,{matches=null,visible=null}={}){
+  if(decisionInitialLoadCompleteFinal)return;
+  decisionInitialProgressPercentFinal=Math.max(decisionInitialProgressPercentFinal,Math.min(99,Math.max(0,Number(percent)||0)));
+  if(currentTopView()!=='decision'||decisionActiveTabState()?.kind==='decision')return;
+  const body=$('decisionBody'),visibleCount=visible===null?(body?.children.length||0):visible;
+  $('decisionPage').textContent=progressiveResultStatusFinal({
+    active:true,
+    matches:matches===null?visibleCount:matches,
+    visible:visibleCount,
+    percentOverride:decisionInitialProgressPercentFinal,
+    progressLabel:'inläst'
+  });
+}
+
+function progressiveOverviewCardsFinal(id,entries,active=false){
+  const host=$(id);
+  if(!host)return;
+  const signature=entries.map(([label])=>label).join('\u001f');
+  if(host.dataset.progressiveLabels!==signature||host.children.length!==entries.length){
+    host.dataset.progressiveLabels=signature;
+    host.innerHTML=entries.map(([label,value])=>`<div class="card"><span>${esc(label)}</span><b>${esc(String(value))}</b></div>`).join('');
+  }else{
+    [...host.children].forEach((card,index)=>{
+      const value=String(entries[index][1]),output=card.querySelector('b');
+      if(output&&output.textContent!==value)output.textContent=value;
+    });
+  }
+  host.setAttribute('aria-busy',active?'true':'false');
 }
 
 async function progressiveCooperativeSortFinal(rows,compare,job,budget=5){
@@ -266,6 +321,37 @@ const filteredRawRowsBeforeProgressiveFinal=filteredRawRows;
 let rawProgressiveSearchStateFinal=null;
 let rawProgressivePointerDownFinal=false;
 
+function rawOverviewAccumulatorFinal(){
+  return {rows:0,groups:new Set(),totalVotesCast:0,validVotesCast:0,totalEligibleVoters:0,eligibleVotes:0,ineligibleVotes:0,firstParticipation:0};
+}
+
+function rawOverviewCollectFinal(summary,row){
+  const number=value=>{const parsed=Number(value);return Number.isFinite(parsed)?parsed:0;};
+  summary.rows++;
+  const votes=number(rawValue(row,'votes'));
+  if(isRawInvalidVoteRow(row))summary.ineligibleVotes+=votes;else summary.eligibleVotes+=votes;
+  const key=[rawComparable(row,'year'),rawComparable(row,'election_type'),rawComparable(row,'county_name'),rawComparable(row,'municipality_name')].join('|');
+  if(summary.groups.has(key))return;
+  summary.groups.add(key);
+  if(summary.groups.size===1)summary.firstParticipation=number(row.election_participation_percent);
+  summary.totalVotesCast+=number(row.total_votes_cast);
+  summary.validVotesCast+=number(row.valid_votes_cast);
+  summary.totalEligibleVoters+=number(row.total_eligible_voters);
+}
+
+function rawOverviewEntriesFinal(summary,active=false){
+  const validTotal=summary.validVotesCast||summary.eligibleVotes;
+  const invalidTotal=summary.totalVotesCast&&summary.validVotesCast?Math.max(0,summary.totalVotesCast-summary.validVotesCast):summary.ineligibleVotes;
+  const participation=summary.totalEligibleVoters>0?summary.totalVotesCast/summary.totalEligibleVoters*100:summary.firstParticipation;
+  return [
+    ['Totalt röstberättigade',fmtInt(summary.totalEligibleVoters)],
+    ['Avgivna röster',fmtInt(summary.totalVotesCast)],
+    ['Giltiga röster',fmtInt(validTotal)],
+    ['Ogiltiga röster',fmtInt(invalidTotal)],
+    ['Valdeltagande',participation?participation.toFixed(2)+'%':active?'0.00%':'—']
+  ];
+}
+
 function rawProgressiveSearchKeyFinal(){
   return JSON.stringify([
     fuzzySearchNormalize($('rawSearch')?.value||''),
@@ -295,12 +381,12 @@ function rawProgressivePaintFinal(state,complete=false){
   if(rawProgressivePointerDownFinal){state.paintPending=true;state.complete=complete;return;}
   state.visibleRows=state.matches;
   if(!complete){
-    state.revealEligible=Math.min(state.previewEligible.length,(state.revealEligible||0)+(state.hasPainted?10:6));
-    state.revealIneligible=Math.min(state.previewIneligible.length,(state.revealIneligible||0)+(state.hasPainted?10:6));
+    state.revealEligible=state.previewEligible.length;
+    state.revealIneligible=state.previewIneligible.length;
   }
   rawStableRenderRowsFinal(complete?state.sortedRows:state.previewEligible.slice(0,state.revealEligible),complete?null:state.previewIneligible.slice(0,state.revealIneligible),{complete,state});
   if(complete)return;
-  $('rawCount').textContent=progressiveResultStatusFinal({active:true,matches:state.matches.length,visible:state.revealEligible+state.revealIneligible,index:state.index,total:state.total});
+  $('rawCount').textContent=progressiveResultStatusFinal({active:true,matches:state.matches.length,visible:state.revealEligible+state.revealIneligible,index:state.index,total:state.total,progressLabel:state.initialLoad?'inläst':'genomsökt'});
 }
 
 async function rawBuildFinalPresentationFinal(state,job){
@@ -330,6 +416,20 @@ async function rawBuildFinalPresentationFinal(state,job){
   return {eligible,ineligible,eligibleVotes,ineligibleVotes,meta:{totalVotesCast,validVotesCast,totalEligibleVoters,participation:totalEligibleVoters>0?totalVotesCast/totalEligibleVoters*100:firstParticipation}};
 }
 
+async function rawFinalizeProgressiveStateFinal(state,job){
+  state.sortedRows=await progressiveCooperativeSortFinal(state.matches,rawProgressiveCompareFinal,job,5);
+  if(job.cancelled||!state.sortedRows)return false;
+  state.finalPresentation=await rawBuildFinalPresentationFinal(state,job);
+  if(job.cancelled||!state.finalPresentation)return false;
+  state.previewEligible=state.finalPresentation.eligible.slice(0,rawVisibleCount(rawEligiblePage,state.finalPresentation.eligible.length));
+  state.previewIneligible=state.finalPresentation.ineligible.slice(0,rawVisibleCount(rawIneligiblePage,state.finalPresentation.ineligible.length));
+  state.revealEligible=state.previewEligible.length;
+  state.revealIneligible=state.previewIneligible.length;
+  if(state.initialLoad)rawInitialLoadCompleteFinal=true;
+  rawProgressivePaintFinal(state,true);
+  return true;
+}
+
 progressiveSearchHandlersFinal.set('raw',async job=>{
   const filters={
     years:selectedRawValues('rawYear'),
@@ -340,7 +440,7 @@ progressiveSearchHandlersFinal.set('raw',async job=>{
   };
   const query=fuzzySearchNormalize($('rawSearch')?.value||'');
   const filterAccumulator=rawFilterOptionCacheFinal?null:rawFilterAccumulatorFinal();
-  const state={key:rawProgressiveSearchKeyFinal(),matches:[],visibleRows:[],previewEligible:[],previewIneligible:[],sortedRows:[],index:0,total:rawRows.length,hasPainted:false,pointerDown:false,paintPending:false,revealEligible:0,revealIneligible:0};
+  const state={key:rawProgressiveSearchKeyFinal(),matches:[],visibleRows:[],previewEligible:[],previewIneligible:[],sortedRows:[],summary:rawOverviewAccumulatorFinal(),index:0,total:rawRows.length,initialLoad:!rawInitialLoadCompleteFinal,hasPainted:false,pointerDown:false,paintPending:false,revealEligible:0,revealIneligible:0};
   rawProgressiveSearchStateFinal=state;
   rawProgressivePaintFinal(state);
   let lastPaint=performance.now(),lastPaintCount=0;
@@ -351,6 +451,7 @@ progressiveSearchHandlersFinal.set('raw',async job=>{
       if(filterAccumulator)rawCollectFilterOptionFinal(filterAccumulator,row);
       if(rawProgressivePredicateFinal(row,filters,query)){
         state.matches.push(row);
+        rawOverviewCollectFinal(state.summary,row);
         const preview=isRawInvalidVoteRow(row)?state.previewIneligible:state.previewEligible;
         progressiveInsertRankedFinal(preview,row,rawProgressiveCompareFinal,rawPageSize());
       }
@@ -361,7 +462,7 @@ progressiveSearchHandlersFinal.set('raw',async job=>{
       lastPaint=now;
       lastPaintCount=state.matches.length;
     }else{
-      $('rawCount').textContent=progressiveResultStatusFinal({active:true,matches:state.matches.length,visible:state.revealEligible+state.revealIneligible,index:state.index,total:state.total});
+      $('rawCount').textContent=progressiveResultStatusFinal({active:true,matches:state.matches.length,visible:state.revealEligible+state.revealIneligible,index:state.index,total:state.total,progressLabel:state.initialLoad?'inläst':'genomsökt'});
     }
     if(!await progressiveSearchFrameFinal(job))return;
   }
@@ -375,17 +476,7 @@ progressiveSearchHandlersFinal.set('raw',async job=>{
       return;
     }
   }
-  state.sortedRows=await progressiveCooperativeSortFinal(state.matches,rawProgressiveCompareFinal,job,5);
-  if(job.cancelled||!state.sortedRows)return;
-  state.finalPresentation=await rawBuildFinalPresentationFinal(state,job);
-  if(job.cancelled||!state.finalPresentation)return;
-  state.previewEligible=state.finalPresentation.eligible.slice(0,rawVisibleCount(rawEligiblePage,state.finalPresentation.eligible.length));
-  state.previewIneligible=state.finalPresentation.ineligible.slice(0,rawVisibleCount(rawIneligiblePage,state.finalPresentation.ineligible.length));
-  while((state.revealEligible<state.previewEligible.length||state.revealIneligible<state.previewIneligible.length)&&!job.cancelled){
-    rawProgressivePaintFinal(state,false);
-    if(!await progressiveSearchFrameFinal(job))return;
-  }
-  rawProgressivePaintFinal(state,true);
+  await rawFinalizeProgressiveStateFinal(state,job);
 });
 
 /* Municipal decisions: build the fuzzy-match set incrementally, then let the
@@ -423,6 +514,26 @@ filteredDecisionActivityRows=function(){
   return filteredDecisionActivityRowsBeforeProgressiveFinal();
 };
 
+function decisionActivitySummaryAccumulatorFinal(){
+  return {documents:0,types:new Set(),dated:0,withSummary:0};
+}
+
+function decisionActivitySummaryCollectFinal(summary,row){
+  summary.documents++;
+  if(row.type)summary.types.add(row.type);
+  if(row.dateSort)summary.dated++;
+  if(row.summary)summary.withSummary++;
+}
+
+function decisionActivitySummaryEntriesFinal(summary){
+  return [
+    ['Dokument',fmtInt(summary.documents)],
+    ['Dokumenttyper',fmtInt(summary.types.size)],
+    ['Daterade',fmtInt(summary.dated)],
+    ['Med sammanfattning',fmtInt(summary.withSummary)]
+  ];
+}
+
 progressiveSearchHandlersFinal.set('decision-activity',async job=>{
   ensureMunicipalDocumentData();
   const query=decisionSearchNormalizeFinal(decisionActivitySearchQuery);
@@ -439,24 +550,28 @@ progressiveSearchHandlersFinal.set('decision-activity',async job=>{
     }
     return decisionActivitySortCompare(a,b);
   };
-  const state={key:decisionActivityProgressiveSearchKeyFinal(),matches:[],visibleRows:[],previewRows:[],sortedRows:[],index:0,total:decisionActivityRows.length,hasPainted:false,pointerDown:false,paintPending:false,revealCount:0};
+  const state={key:decisionActivityProgressiveSearchKeyFinal(),matches:[],visibleRows:[],previewRows:[],sortedRows:[],summary:decisionActivitySummaryAccumulatorFinal(),index:0,total:decisionActivityRows.length,initialLoad:!decisionActivityInitialLoadCompleteFinal,hasPainted:false,pointerDown:false,paintPending:false,revealCount:0};
   decisionActivityProgressiveSearchStateFinal=state;
   decisionActivityProgressivePaintFinal(state,false);
   let lastPaint=performance.now(),lastPaintCount=0;
   while(state.index<state.total&&!job.cancelled){
-    const started=performance.now();
+    const started=performance.now();let traversed=0;
     do{
       const row=decisionActivityRows[state.index++];
+      traversed++;
       if(!decisionActivityIncludedByDate(row)||filters.types.length&&!filters.types.includes(row.type)||filters.parties.length&&!filters.parties.includes(row.party)||filters.politicalOwners.length&&!filters.politicalOwners.includes(row.politicalOwner)||filters.officialOwners.length&&!filters.officialOwners.includes(row.officialOwner))continue;
       if(query&&decisionActivitySearchRelevanceFinal(row,query)<=0)continue;
       state.matches.push(row);
+      decisionActivitySummaryCollectFinal(state.summary,row);
       progressiveInsertRankedFinal(state.previewRows,row,compare,decisionVisibleCount(0,Number.MAX_SAFE_INTEGER));
-    }while(state.index<state.total&&!progressiveSliceExpiredFinal(started,5));
+    }while(state.index<state.total&&traversed<48&&!progressiveSliceExpiredFinal(started,5));
     const now=performance.now();
-    if(state.matches.length!==lastPaintCount&&(!state.hasPainted||now-lastPaint>=100)){
+    if(state.matches.length!==lastPaintCount&&(lastPaintCount===0||!state.hasPainted||now-lastPaint>=48||state.index===state.total)){
       decisionActivityProgressivePaintFinal(state,false);
       lastPaint=now;
       lastPaintCount=state.matches.length;
+    }else if(decisionActivityProgressiveSearchStateFinal===state){
+      $('decisionActivityStatus').textContent=progressiveResultStatusFinal({active:true,matches:state.matches.length,visible:$('decisionActivityBody')?.children.length||0,index:state.index,total:state.total,progressLabel:state.initialLoad?'inläst':'genomsökt'});
     }
     if(!await progressiveSearchFrameFinal(job))return;
   }
@@ -465,11 +580,8 @@ progressiveSearchHandlersFinal.set('decision-activity',async job=>{
   if(job.cancelled||!state.sortedRows)return;
   state.visibleRows=state.matches;
   state.previewRows=state.sortedRows.slice(0,decisionVisibleCount(0,state.sortedRows.length));
-  const finalVisible=decisionVisibleCount((decisionActivityTabs[0]||{page:0}).page||0,state.sortedRows.length);
-  while(state.revealCount<finalVisible&&!job.cancelled){
-    decisionActivityProgressivePaintFinal(state,false);
-    if(!await progressiveSearchFrameFinal(job))return;
-  }
+  state.revealCount=decisionVisibleCount((decisionActivityTabs[0]||{page:0}).page||0,state.sortedRows.length);
+  if(state.initialLoad)decisionActivityInitialLoadCompleteFinal=true;
   decisionActivityProgressivePaintFinal(state,true);
 });
 
@@ -895,25 +1007,34 @@ ensureDecisionDataProgressively=function(){
   const job={cancelled:false};
   decisionCooperativePreparationPromiseFinal=(async()=>{
     await ensureDecisionDataProgressivelyBeforeSearchWarmFinal();
+    decisionUpdateInitialProgressFinal(72);
     decisionStableBaseRowsFinal=null;
     decisionProgressiveSearchStateFinal=null;
-    if(currentTopView()==='decision')decisionScheduleProgressiveRefreshFinal();
-    else if(currentTopView()==='decisionActivity')renderDecisionActivityView();
     await progressiveSearchFrameFinal(job);
     await decisionBuildPersonIndexCooperativelyFinal(job);
+    decisionUpdateInitialProgressFinal(74);
     await decisionHydrateMeetingFieldsCooperativelyFinal(job);
+    decisionUpdateInitialProgressFinal(75);
     await decisionPreparePositionsCooperativelyFinal(job);
+    decisionUpdateInitialProgressFinal(77);
     await decisionHydrateDecoratorsCooperativelyFinal(job);
+    decisionUpdateInitialProgressFinal(79);
     await decisionBuildMeetingRowsCooperativelyFinal(job);
+    decisionUpdateInitialProgressFinal(81);
     decisionApplyProtocolMatterHeadersFinal();
+    decisionUpdateInitialProgressFinal(82);
     await progressiveSearchFrameFinal(job);
     decisionApplyOrganNamesFinal();
+    decisionUpdateInitialProgressFinal(83);
     await progressiveSearchFrameFinal(job);
     decisionApplyInferredParagraphVotesFinal();
+    decisionUpdateInitialProgressFinal(84);
     await progressiveSearchFrameFinal(job);
     await decisionApplyCanonicalTotalsCooperativelyFinal(job);
+    decisionUpdateInitialProgressFinal(85);
     await decisionNormalizeVoteCountersCooperativelyFinal(job);
     await decisionApplyMeetingRollupsCooperativelyFinal(job);
+    decisionUpdateInitialProgressFinal(86);
     decisionPack._cooperativePreparationReadyFinal=true;
     decisionScheduleSearchWarmFinal();
   })().finally(()=>{decisionCooperativePreparationPromiseFinal=null;});
@@ -1050,6 +1171,34 @@ function decisionProgressiveReconcileRowsFinal(rows,animate=true){
   progressiveReconcileRowsFinal($('decisionBody'),rows,decisionProposalKey,decisionStableRowHtmlFinal,{animate,pointerDown:decisionProgressivePointerDownFinal});
 }
 
+let decisionStableHeaderKeyFinal='';
+function decisionEnsureStableHeaderFinal(){
+  const head=$('decisionHead');
+  if(!head)return;
+  const key=`${decisionSortColumn}|${decisionSortDir}`;
+  if(decisionStableHeaderKeyFinal===key&&head.children.length)return;
+  decisionStableHeaderKeyFinal=key;
+  head.innerHTML=`<tr>${decisionSortableHeader('date','Datum')}${decisionSortableHeader('title','Organ')}${decisionSortableHeader('pointTitle','Ärende')}${decisionSortableHeader('result','Resultat')}${decisionSortableHeader('voteRoundCount','Voteringar')}${decisionSortableHeader('voteCount','Röstning')}${decisionSortableHeader('yes','Ja')}${decisionSortableHeader('no','Nej')}${decisionSortableHeader('abstain','Avstår')}${decisionSortableHeader('absent','Frånvarande')}<th>Källa</th></tr>`;
+  head.querySelectorAll('[data-decision-sort]').forEach(header=>{
+    header.onclick=()=>setDecisionSort(header.dataset.decisionSort);
+    header.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();setDecisionSort(header.dataset.decisionSort);}};
+  });
+}
+
+function decisionProgressiveStatusFinal(state,complete,visibleCount){
+  const initial=!!state.initialLoad&&!complete;
+  const traversed=state.progressIndex??state.index,total=state.progressTotal??state.total;
+  return progressiveResultStatusFinal({
+    active:!complete,
+    matches:state.filteredMatches.length,
+    visible:visibleCount,
+    index:traversed,
+    total,
+    percentOverride:initial?86+(total?Math.min(1,traversed/total)*14:0):null,
+    progressLabel:initial?'inläst':'genomsökt'
+  });
+}
+
 function decisionProgressivePaintRankedFinal(state,complete=false){
   if(decisionProgressiveSearchStateFinal!==state)return;
   if(decisionProgressivePointerDownFinal){state.paintPending=true;return;}
@@ -1058,8 +1207,18 @@ function decisionProgressivePaintRankedFinal(state,complete=false){
   const filteredRows=state.filteredMatches;
   const rows=complete?state.sortedRows:state.previewRows;
   const targetCount=decisionVisibleCount(decisionListTab().page||0,rows.length);
-  state.revealCount=Math.min(targetCount,(state.revealCount||0)+(state.hasPainted?5:3));
+  if(state.previewCarryCount&&!complete&&rows.length<Math.min(state.previewCarryCount,decisionPageSize())){
+    $('decisionPage').textContent=decisionProgressiveStatusFinal(state,false,$('decisionBody')?.children.length||0);
+    return;
+  }
+  if(state.previewCarryCount){
+    state.revealCount=Math.max(state.revealCount,Math.min(state.previewCarryCount,targetCount));
+    state.previewCarryCount=0;
+  }
+  state.revealCount=targetCount;
   const visibleCount=Math.min(targetCount,state.revealCount);
+  decisionEnsureStableHeaderFinal();
+  if(visibleCount||complete)$('decisionMasterPane')?.classList.remove('table-shell-awaiting-data');
   if(!state.hasPainted){
     const wrap=$('decisionBody')?.closest('.raw-table-wrap');
     if(wrap)wrap.scrollTop=0;
@@ -1068,10 +1227,10 @@ function decisionProgressivePaintRankedFinal(state,complete=false){
   decisionProgressiveReconcileRowsFinal(rows.slice(0,visibleCount),state.hasPainted);
   state.hasPainted=true;
   decisionStableListRenderFinal={key:decisionStableListKeyFinal(),filteredRows,rows,rendered:visibleCount};
-  if(complete)$('decisionOverview').innerHTML=state.summaryHtml||decisionMasterSummaryCards(undefined,filteredRows);
+  progressiveOverviewCardsFinal('decisionOverview',decisionSummaryEntriesFinal(state.summary),!complete);
   $('decisionStatus').textContent='';
   $('decisionStatus').hidden=true;
-  $('decisionPage').textContent=progressiveResultStatusFinal({active:!complete,matches:filteredRows.length,visible:visibleCount,index:state.progressIndex??state.index,total:state.progressTotal??state.total});
+  $('decisionPage').textContent=decisionProgressiveStatusFinal(state,complete,visibleCount);
   $('decisionPrev').hidden=true;
   $('decisionNext').hidden=true;
   $('decisionMasterPane').hidden=false;
@@ -1097,14 +1256,18 @@ function decisionSummaryCollectFinal(summary,row){
   for(const voteId of row.voteIds||[])if(voteId)summary.votes.add(voteId);
 }
 
-function decisionSummaryHtmlFinal(summary){
+function decisionSummaryEntriesFinal(summary){
   return [
     ['Unika beslutspunkter och sammanträden',fmtInt(summary.tableRows)],
     ['Ärenden',fmtInt(summary.matters.size)],
     ['Sammanträden',fmtInt(summary.meetings.size)],
     ['Unika beslutspunkter',fmtInt(summary.decisions.size)],
     ['Formella voteringar',fmtInt(summary.votes.size)]
-  ].map(([label,value])=>`<div class="card"><span>${esc(label)}</span><b>${esc(String(value))}</b></div>`).join('');
+  ];
+}
+
+function decisionSummaryHtmlFinal(summary){
+  return decisionSummaryEntriesFinal(summary).map(([label,value])=>`<div class="card"><span>${esc(label)}</span><b>${esc(String(value))}</b></div>`).join('');
 }
 
 progressiveSearchHandlersFinal.set('decision',async job=>{
@@ -1116,10 +1279,12 @@ progressiveSearchHandlersFinal.set('decision',async job=>{
     if(query){const relevance=decisionPointSearchRelevanceFinal(b,query)-decisionPointSearchRelevanceFinal(a,query);if(relevance)return relevance;}
     return decisionSortCompare(a,b);
   };
-  const state={key:query,baseFilterKey,sortKey,dataKey,matches:new Set(),filteredMatches:[],previewRows:[],sortedRows:[],summary:decisionSummaryAccumulatorFinal(),index:0,total:decisionAllPointRows.length,progressIndex:0,progressTotal:decisionAllPointRows.length*(query?2:1),complete:true,finished:false,hasPainted:false,paintPending:false,revealCount:0};
+  const state={key:query,baseFilterKey,sortKey,dataKey,matches:new Set(),filteredMatches:[],previewRows:[],sortedRows:[],summary:decisionSummaryAccumulatorFinal(),index:0,total:decisionAllPointRows.length,progressIndex:0,progressTotal:decisionAllPointRows.length*(query?2:1),complete:true,finished:false,initialLoad:!decisionInitialLoadCompleteFinal,hasPainted:false,paintPending:false,revealCount:0};
   decisionProgressiveSearchStateFinal=state;
   decisionListTab().page=0;
-  decisionProgressivePaintRankedFinal(state,false);
+  const hasDiaryPreview=!!$('decisionBody')?.querySelector('.decision-preview-row');
+  if(hasDiaryPreview){state.hasPainted=true;state.previewCarryCount=$('decisionBody').children.length;}
+  else decisionProgressivePaintRankedFinal(state,false);
   let baseRows=decisionStableBaseRowsFinal?.key===baseFilterKey&&decisionStableBaseRowsFinal?.dataKey===dataKey?decisionStableBaseRowsFinal.rows:null;
   if(!baseRows){
     baseRows=await decisionStableBuildBaseRowsFinal(job);
@@ -1196,12 +1361,9 @@ progressiveSearchHandlersFinal.set('decision',async job=>{
   if(job.cancelled||!state.sortedRows)return;
   state.previewRows=state.sortedRows.slice(0,decisionPageSize());
   state.summaryHtml=decisionSummaryHtmlFinal(state.summary);
-  const finalVisible=decisionVisibleCount(decisionListTab().page||0,state.sortedRows.length);
-  while(state.revealCount<finalVisible&&!job.cancelled){
-    decisionProgressivePaintRankedFinal(state,false);
-    if(!await progressiveSearchFrameFinal(job))return;
-  }
+  state.revealCount=decisionVisibleCount(decisionListTab().page||0,state.sortedRows.length);
   state.finished=true;
+  if(state.initialLoad)decisionInitialLoadCompleteFinal=true;
   decisionProgressivePaintRankedFinal(state,true);
   const filterOptions=await decisionBuildFilterOptionsFinal(job);
   if(!job.cancelled)await decisionApplyFilterOptionsFinal(filterOptions,job);
@@ -1274,13 +1436,9 @@ renderDecisionMasterView=function(){
     body.insertAdjacentHTML('beforeend',state.rows.slice(state.rendered,visibleCount).map(decisionStableRowHtmlFinal).join(''));
   }
   state.rendered=visibleCount;
+  decisionEnsureStableHeaderFinal();
   if(reset){
     $('decisionOverview').innerHTML=decisionMasterSummaryCards(undefined,state.filteredRows);
-    $('decisionHead').innerHTML=`<tr>${decisionSortableHeader('date','Datum')}${decisionSortableHeader('title','Organ')}${decisionSortableHeader('pointTitle','Ärende')}${decisionSortableHeader('result','Resultat')}${decisionSortableHeader('voteRoundCount','Voteringar')}${decisionSortableHeader('voteCount','Röstning')}${decisionSortableHeader('yes','Ja')}${decisionSortableHeader('no','Nej')}${decisionSortableHeader('abstain','Avstår')}${decisionSortableHeader('absent','Frånvarande')}<th>Källa</th></tr>`;
-    $('decisionHead').querySelectorAll('[data-decision-sort]').forEach(header=>{
-      header.onclick=()=>setDecisionSort(header.dataset.decisionSort);
-      header.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();setDecisionSort(header.dataset.decisionSort);}};
-    });
   }
   if(state.rows.length){
     $('decisionStatus').textContent='';
@@ -1381,17 +1539,24 @@ function rawStableRenderRowsFinal(sortedRows,partialIneligible=null,{complete=tr
   $('rawIneligibleCount').textContent=ineligible.length?'':'Inga ogiltiga rader matchar filtren.';
   $('rawIneligibleCount').hidden=!!ineligible.length;
   $('rawInvalidVoteNote').hidden=!ineligible.length;
-  $('rawEligiblePage').textContent=eligible.length?`Visar ${fmtInt(shownEligible.length)}${complete?` / ${fmtInt(eligible.length)}`:' hittills'}`:'';
-  $('rawIneligiblePage').textContent=ineligible.length?`Visar ${fmtInt(shownIneligible.length)}${complete?` / ${fmtInt(ineligible.length)}`:' hittills'}`:'';
+  $('rawEligiblePage').textContent='';
+  $('rawIneligiblePage').textContent='';
   ['rawEligiblePrev','rawEligibleNext','rawIneligiblePrev','rawIneligibleNext'].forEach(id=>{$(id).hidden=true;});
-  if(complete){
+  if(state?.summary)progressiveOverviewCardsFinal('rawOverview',rawOverviewEntriesFinal(state.summary,!complete),!complete);
+  else if(complete){
     const meta=finalPresentation?.meta||rawMeta(sortedRows);
     const invalidTotal=meta.totalVotesCast&&meta.validVotesCast?Math.max(0,meta.totalVotesCast-meta.validVotesCast):(finalPresentation?.ineligibleVotes??ineligible.reduce((sum,row)=>sum+(Number(rawValue(row,'votes'))||0),0));
     const validTotal=meta.validVotesCast||(finalPresentation?.eligibleVotes??eligible.reduce((sum,row)=>sum+(Number(rawValue(row,'votes'))||0),0));
-    $('rawOverview').innerHTML=[['Totalt röstberättigade',fmtInt(meta.totalEligibleVoters)],['Avgivna röster',fmtInt(meta.totalVotesCast)],['Giltiga röster',fmtInt(validTotal)],['Ogiltiga röster',fmtInt(invalidTotal)],['Valdeltagande',meta.participation?meta.participation.toFixed(2)+'%':'—']].map(([key,value])=>`<div class="card">${esc(key)}<b>${esc(String(value))}</b></div>`).join('');
+    progressiveOverviewCardsFinal('rawOverview',[
+      ['Totalt röstberättigade',fmtInt(meta.totalEligibleVoters)],
+      ['Avgivna röster',fmtInt(meta.totalVotesCast)],
+      ['Giltiga röster',fmtInt(validTotal)],
+      ['Ogiltiga röster',fmtInt(invalidTotal)],
+      ['Valdeltagande',meta.participation?meta.participation.toFixed(2)+'%':'—']
+    ]);
   }
   syncRawSelectionUi();
-  if(complete)$('rawCount').textContent=progressiveResultStatusFinal({matches:sortedRows.length,visible:shownEligible.length+shownIneligible.length,selected:selectedRawCount()});
+  if(complete)$('rawCount').textContent=progressiveResultStatusFinal({matches:sortedRows.length,visible:shownEligible.length+shownIneligible.length});
   if(state)state.hasPainted=true;
 }
 
@@ -1510,14 +1675,14 @@ setRawPageSize=function(size){
 function rawLoadHistoricWorkerFinal(worker){
   return new Promise((resolve,reject)=>{
     let state=null,filters=null,query='',filterAccumulator=null,lastPaint=performance.now();
-    worker.onmessage=event=>{
+    worker.onmessage=async event=>{
       const message=event.data||{};
       if(message.type==='historic-meta'){
         rawColumns=(message.columns||[]).filter(column=>!rawHiddenColumns.has(column));
         rawRows=[];
         filters={years:selectedRawValues('rawYear'),elections:selectedRawValues('rawElection'),counties:selectedRawValues('rawCounty'),municipalities:selectedRawValues('rawMunicipality'),parties:selectedRawValues('rawParty')};
         query=fuzzySearchNormalize($('rawSearch')?.value||'');filterAccumulator=rawFilterAccumulatorFinal();
-        state={key:rawProgressiveSearchKeyFinal(),matches:[],visibleRows:[],previewEligible:[],previewIneligible:[],sortedRows:[],index:0,total:Number(message.total)||0,hasPainted:false,paintPending:false,revealEligible:0,revealIneligible:0};
+        state={key:rawProgressiveSearchKeyFinal(),matches:[],visibleRows:[],previewEligible:[],previewIneligible:[],sortedRows:[],summary:rawOverviewAccumulatorFinal(),index:0,total:Number(message.total)||0,initialLoad:true,hasPainted:false,paintPending:false,revealEligible:0,revealIneligible:0};
         rawProgressiveSearchStateFinal=state;
         rawProgressivePaintFinal(state,false);
       }else if(message.type==='historic-chunk'&&state){
@@ -1526,6 +1691,7 @@ function rawLoadHistoricWorkerFinal(worker){
           rawCollectFilterOptionFinal(filterAccumulator,row);
           if(rawProgressivePredicateFinal(row,filters,query)){
             state.matches.push(row);
+            rawOverviewCollectFinal(state.summary,row);
             progressiveInsertRankedFinal(isRawInvalidVoteRow(row)?state.previewIneligible:state.previewEligible,row,rawProgressiveCompareFinal,rawPageSize());
           }
         }
@@ -1534,7 +1700,12 @@ function rawLoadHistoricWorkerFinal(worker){
       }else if(message.type==='historic-complete'){
         worker.terminate();
         rawFilterOptionCacheFinal=rawFinalizeFilterOptionsFinal(filterAccumulator);
-        rawReady=true;buildRawFilters();rawScheduleProgressiveFinal();resolve();
+        rawReady=true;
+        buildRawFilters();
+        const current=rawProgressiveSearchStateFinal===state&&state.key===rawProgressiveSearchKeyFinal();
+        if(current)await rawFinalizeProgressiveStateFinal(state,{cancelled:false});
+        else rawScheduleProgressiveFinal();
+        resolve();
       }else if(message.type==='error'){
         worker.terminate();reject(Error(message.message||'Den historiska valdatabasen kunde inte läsas.'));
       }
@@ -1550,6 +1721,7 @@ function rawLoadHistoricWorkerFinal(worker){
 ensureRawData=async function(){
   if(rawReady)return;
   if(rawDataPromise)return rawDataPromise;
+  $('rawCount').textContent=progressiveResultStatusFinal({active:true,progressLabel:'inläst'});
   rawDataPromise=(async()=>{
     try{
       const worker=progressiveCreateDataWorkerFinal();
@@ -1573,7 +1745,7 @@ ensureRawData=async function(){
       rawRows=[];
       const filters={years:selectedRawValues('rawYear'),elections:selectedRawValues('rawElection'),counties:selectedRawValues('rawCounty'),municipalities:selectedRawValues('rawMunicipality'),parties:selectedRawValues('rawParty')};
       const query=fuzzySearchNormalize($('rawSearch')?.value||''),filterAccumulator=rawFilterAccumulatorFinal();
-      const state={key:rawProgressiveSearchKeyFinal(),matches:[],visibleRows:[],previewEligible:[],previewIneligible:[],sortedRows:[],index:0,total:sourceRows.length,hasPainted:false,paintPending:false,revealEligible:0,revealIneligible:0};
+      const state={key:rawProgressiveSearchKeyFinal(),matches:[],visibleRows:[],previewEligible:[],previewIneligible:[],sortedRows:[],summary:rawOverviewAccumulatorFinal(),index:0,total:sourceRows.length,initialLoad:true,hasPainted:false,paintPending:false,revealEligible:0,revealIneligible:0};
       rawProgressiveSearchStateFinal=state;
       rawProgressivePaintFinal(state,false);
       let lastPaint=performance.now(),started=performance.now();
@@ -1593,6 +1765,7 @@ ensureRawData=async function(){
         state.index=index+1;
         if(rawProgressivePredicateFinal(row,filters,query)){
           state.matches.push(row);
+          rawOverviewCollectFinal(state.summary,row);
           progressiveInsertRankedFinal(isRawInvalidVoteRow(row)?state.previewIneligible:state.previewEligible,row,rawProgressiveCompareFinal,rawPageSize());
         }
         if(progressiveSliceExpiredFinal(started,4)){
@@ -1605,7 +1778,9 @@ ensureRawData=async function(){
       rawFilterOptionCacheFinal=rawFinalizeFilterOptionsFinal(filterAccumulator);
       rawReady=true;
       buildRawFilters();
-      rawScheduleProgressiveFinal();
+      const current=rawProgressiveSearchStateFinal===state&&state.key===rawProgressiveSearchKeyFinal();
+      if(current)await rawFinalizeProgressiveStateFinal(state,{cancelled:false});
+      else rawScheduleProgressiveFinal();
     }catch(error){
       $('rawStatus').textContent='Den inbäddade JSON-datan kunde inte läsas: '+error.message;
       throw error;
@@ -1623,6 +1798,16 @@ function decisionActivityRowHtmlFinal(row){
 }
 
 let decisionActivityStableHeaderKeyFinal='';
+function decisionActivityEnsureStableHeaderFinal(){
+  const head=$('decisionActivityHead');
+  if(!head)return;
+  const key=`${decisionActivitySortColumn}|${decisionActivitySortDir}`;
+  if(decisionActivityStableHeaderKeyFinal===key&&head.children.length)return;
+  decisionActivityStableHeaderKeyFinal=key;
+  head.innerHTML=`<tr>${decisionActivitySortableHeader('date','Datum')}${decisionActivitySortableHeader('type','Dokumenttyp')}${decisionActivitySortableHeader('title','Titel')}${decisionActivitySortableHeader('summary','Sammanfattning')}${decisionActivitySortableHeader('points','Viktigt')}${decisionActivitySortableHeader('party','Område/organ')}<th>Källa</th></tr>`;
+  head.querySelectorAll('[data-activity-sort]').forEach(header=>header.onclick=()=>setDecisionActivitySort(header.dataset.activitySort));
+}
+
 function decisionActivityBindStableEventsFinal(){
   const body=$('decisionActivityBody');
   if(!body||body.dataset.stableClickBound==='1')return;
@@ -1648,6 +1833,7 @@ function decisionActivityStableRenderRowsFinal(filteredRows,sortedRows,{complete
   if(state){state.paintPending=false;state.complete=complete;}
   const listTab=decisionActivityTabs[0]||{page:0};
   const visibleRows=complete?sortedRows.slice(0,decisionVisibleCount(listTab.page||0,sortedRows.length)):sortedRows;
+  if(visibleRows.length||complete)$('decisionActivityBody')?.closest('.raw-table-wrap')?.classList.remove('table-shell-awaiting-data');
   decisionActivityBindStableEventsFinal();
   decisionBindInfiniteScrollFinal('decisionActivityBody',()=>{
     const current=decisionActivityProgressiveSearchStateFinal;
@@ -1657,20 +1843,145 @@ function decisionActivityStableRenderRowsFinal(filteredRows,sortedRows,{complete
     renderDecisionActivityView();
     return true;
   });
-  const headerKey=`${decisionActivitySortColumn}|${decisionActivitySortDir}`;
-  if(decisionActivityStableHeaderKeyFinal!==headerKey){
-    decisionActivityStableHeaderKeyFinal=headerKey;
-    $('decisionActivityHead').innerHTML=`<tr>${decisionActivitySortableHeader('date','Datum')}${decisionActivitySortableHeader('type','Dokumenttyp')}${decisionActivitySortableHeader('title','Titel')}${decisionActivitySortableHeader('summary','Sammanfattning')}${decisionActivitySortableHeader('points','Viktigt')}${decisionActivitySortableHeader('party','Område/organ')}<th>Källa</th></tr>`;
-    $('decisionActivityHead').querySelectorAll('[data-activity-sort]').forEach(header=>header.onclick=()=>setDecisionActivitySort(header.dataset.activitySort));
-  }
+  decisionActivityEnsureStableHeaderFinal();
   progressiveReconcileRowsFinal($('decisionActivityBody'),visibleRows,row=>row.id,decisionActivityRowHtmlFinal,{animate:!!state?.hasPainted,pointerDown:decisionActivityProgressivePointerDownFinal});
-  const types=new Set(filteredRows.map(row=>row.type).filter(Boolean));
-  const dated=filteredRows.filter(row=>row.dateSort).length,withSummary=filteredRows.filter(row=>row.summary).length;
-  $('decisionActivityOverview').innerHTML=[['Dokument',fmtInt(filteredRows.length)],['Dokumenttyper',fmtInt(types.size)],['Daterade',fmtInt(dated)],['Med sammanfattning',fmtInt(withSummary)]].map(([key,value])=>`<div class="card">${esc(key)}<b>${esc(String(value))}</b></div>`).join('');
-  $('decisionActivityStatus').textContent=progressiveResultStatusFinal({active:!complete,matches:filteredRows.length,visible:visibleRows.length,index:state?.index||0,total:state?.total||0});
+  let summary=state?.summary;
+  if(!summary){
+    summary=decisionActivitySummaryAccumulatorFinal();
+    filteredRows.forEach(row=>decisionActivitySummaryCollectFinal(summary,row));
+  }
+  progressiveOverviewCardsFinal('decisionActivityOverview',decisionActivitySummaryEntriesFinal(summary),!complete);
+  $('decisionActivityStatus').textContent=progressiveResultStatusFinal({active:!complete,matches:filteredRows.length,visible:visibleRows.length,index:state?.index||0,total:state?.total||0,progressLabel:state?.initialLoad?'inläst':'genomsökt'});
   decisionDecorateMainPdfLinksFinal();
   if(state)state.hasPainted=true;
 }
+
+/* The first-page diary index is already available when the app starts. Use
+   its real protocol entries as an immediate table preview while the much
+   larger decision/vote pack is read. Canonical rows replace this preview as
+   soon as preparation completes. */
+let decisionDiaryPreviewRevisionFinal=0;
+
+function decisionCanonicalPreparationReadyFinal(){
+  return !!(decisionReady&&decisionPack?._cooperativePreparationReadyFinal);
+}
+
+function decisionDiaryPreviewRowFinal(url,diary,index){
+  let documentTitle=String(url||'').split('/').pop()||'Protokoll';
+  try{documentTitle=decodeURIComponent(documentTitle);}catch(_error){}
+  documentTitle=documentTitle.replace(/\.pdf(?:\?.*)?$/i,'');
+  const date=documentTitle.match(/\d{4}-\d{2}-\d{2}/)?.[0]||'';
+  const body=documentTitle
+    .replace(/^\d{4}-\d{2}-\d{2}(?:\s+och\s+\d{4}-\d{2}-\d{2})?\s*/i,'')
+    .replace(/\s+(?:omedelbart\s+justerat\s+protokoll|§.*|,\s*§.*)$/i,'')
+    .trim()||'Kommunalt organ';
+  const id=`protocol-preview-${index}`,point=`sammantrade:preview:${index}`,title=[body,date].filter(Boolean).join(' · ');
+  return {id,point,date,title,pointTitle:title,description:'Hela protokollet för sammanträdet.',proposalType:'Sammanträden',url,sourceUrl:url,localPath:'',body,documentTitle:`${documentTitle}.pdf`,diary:String(diary||''),protocolDiary:String(diary||''),result:'beslut',matterId:id,voteIds:[],voteEvents:{},voteRoundCount:0,voteCount:0,yes:0,no:0,abstain:0,absent:0,fullVoteRoundCount:0,fullVoteCount:0,fullYes:0,fullNo:0,fullAbstain:0,fullAbsent:0,isMeeting:true,meetingKey:id};
+}
+
+function decisionDiaryPreviewMatchesFinal(row){
+  if(!decisionDateMatches(row.date))return false;
+  const organs=selectedDecisionValues('decisionOrgan'),types=selectedDecisionValues('decisionProposalType'),results=selectedDecisionValues('decisionResult');
+  if(organs.length&&!decisionOrganMatchesFinal(organs,row.body))return false;
+  if(types.length&&!types.includes(municipalNorm(row.proposalType)))return false;
+  if(results.length&&!results.includes(municipalNorm(row.result)))return false;
+  if(selectedDecisionValues('decisionParty').length||selectedDecisionValues('decisionMember').length||selectedDecisionValues('decisionVote').length)return false;
+  const query=decisionSearchNormalizeFinal(decisionSearchQuery);
+  return !query||decisionPointSearchRelevanceFinal(row,query)>0;
+}
+
+function decisionDiaryPreviewCompareFinal(a,b){
+  const query=decisionSearchNormalizeFinal(decisionSearchQuery);
+  if(query){
+    const relevance=decisionPointSearchRelevanceFinal(b,query)-decisionPointSearchRelevanceFinal(a,query);
+    if(relevance)return relevance;
+  }
+  return decisionSortCompare(a,b);
+}
+
+function decisionDiaryPreviewHtmlFinal(row){
+  return decisionStableRowHtmlFinal(row).replace('<tr class="decision-selectable-row','<tr aria-busy="true" class="decision-preview-row');
+}
+
+function decisionStartDiaryPreviewFinal(){
+  if(decisionCanonicalPreparationReadyFinal())return;
+  const entries=Object.entries(window.municipalProtocolDiaryPack?.byUrl||{});
+  if(!entries.length)return;
+  const revision=++decisionDiaryPreviewRevisionFinal,summary=decisionSummaryAccumulatorFinal(),rows=[],preview=[];
+  let index=0,hasPainted=false;
+  const paint=()=>{
+    if(revision!==decisionDiaryPreviewRevisionFinal||decisionCanonicalPreparationReadyFinal()||currentTopView()!=='decision')return;
+    const visible=preview.slice(0,decisionPageSize());
+    decisionEnsureStableHeaderFinal();
+    progressiveReconcileRowsFinal($('decisionBody'),visible,decisionProposalKey,decisionDiaryPreviewHtmlFinal,{animate:hasPainted});
+    hasPainted=true;
+    if(visible.length)$('decisionMasterPane')?.classList.remove('table-shell-awaiting-data');
+    progressiveOverviewCardsFinal('decisionOverview',decisionSummaryEntriesFinal(summary),true);
+    decisionUpdateInitialProgressFinal(entries.length?index/entries.length*8:8,{matches:rows.length,visible:visible.length});
+    $('decisionStatus').textContent='';
+    $('decisionStatus').hidden=true;
+  };
+  const step=()=>{
+    if(revision!==decisionDiaryPreviewRevisionFinal||decisionCanonicalPreparationReadyFinal()||currentTopView()!=='decision')return;
+    const started=performance.now();
+    do{
+      const [url,diary]=entries[index],row=decisionDiaryPreviewRowFinal(url,diary,index);
+      index++;
+      if(decisionDiaryPreviewMatchesFinal(row)){
+        rows.push(row);
+        decisionSummaryCollectFinal(summary,row);
+        progressiveInsertRankedFinal(preview,row,decisionDiaryPreviewCompareFinal,decisionPageSize());
+      }
+    }while(index<entries.length&&index%24!==0&&!progressiveSliceExpiredFinal(started,4));
+    paint();
+    if(index<entries.length)requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+/* Paint the complete municipal UI before any large dataset is requested.
+   Loading is then confined to the table and its data-derived counters. */
+function renderMunicipalTableShellFinal(view){
+  if(view==='decision'){
+    renderDecisionPageSizeControls();
+    renderDecisionTabs();
+    syncDecisionDateRangeControls();
+    renderDecisionFilterLocks();
+    decisionEnsureStableHeaderFinal();
+    $('decisionMasterPane').classList.toggle('table-shell-awaiting-data',!decisionProgressiveSearchStateFinal?.finished);
+    $('decisionMasterPane').hidden=false;
+    $('decisionDetailPane').hidden=true;
+    $('decisionPrev').hidden=true;
+    $('decisionNext').hidden=true;
+    if(!decisionProgressiveSearchStateFinal){
+      progressiveOverviewCardsFinal('decisionOverview',decisionSummaryEntriesFinal(decisionSummaryAccumulatorFinal()),true);
+      $('decisionBody').replaceChildren();
+      $('decisionPage').textContent=progressiveResultStatusFinal({active:true,percentOverride:decisionInitialProgressPercentFinal,progressLabel:'inläst'});
+    }
+    if(!decisionCanonicalPreparationReadyFinal())decisionStartDiaryPreviewFinal();
+    $('decisionStatus').textContent='';
+    $('decisionStatus').hidden=true;
+    return;
+  }
+  renderDecisionActivityTabs();
+  syncDecisionActivityDateControls();
+  renderActivityFilterLocks();
+  decisionActivityEnsureStableHeaderFinal();
+  $('decisionActivityBody')?.closest('.raw-table-wrap')?.classList.toggle('table-shell-awaiting-data',!decisionActivityProgressiveSearchStateFinal?.complete);
+  $('decisionActivityListPane').hidden=false;
+  $('decisionActivityDetailPane').hidden=true;
+  if(!decisionActivityProgressiveSearchStateFinal){
+    progressiveOverviewCardsFinal('decisionActivityOverview',decisionActivitySummaryEntriesFinal(decisionActivitySummaryAccumulatorFinal()),true);
+    $('decisionActivityBody').replaceChildren();
+    $('decisionActivityStatus').textContent=progressiveResultStatusFinal({active:true,progressLabel:'inläst'});
+  }
+}
+
+/* The pre-indexing phase must not replace the ready GUI with a spinner. */
+decisionLoadingStatus=function(){
+  const status=$('decisionStatus');
+  if(status){status.textContent='';status.hidden=true;}
+};
 
 function decisionActivityProgressivePaintFinal(state,complete=false){
   if(decisionActivityProgressiveSearchStateFinal!==state)return;
@@ -1685,7 +1996,7 @@ function decisionActivityProgressivePaintFinal(state,complete=false){
   state.visibleRows=state.matches;
   const rows=complete?state.sortedRows:state.previewRows;
   const target=decisionVisibleCount((decisionActivityTabs[0]||{page:0}).page||0,rows.length);
-  if(!complete)state.revealCount=Math.min(target,(state.revealCount||0)+(state.hasPainted?5:3));
+  if(!complete)state.revealCount=target;
   decisionActivityStableRenderRowsFinal(state.matches,rows.slice(0,complete?target:state.revealCount),{complete,state});
   if(complete)buildDecisionActivityFilters();
 }
@@ -1747,6 +2058,8 @@ function decisionScheduleProgressiveRefreshFinal(){
   decisionActiveTab=0;
   resetDecisionPage();
   decisionStableListRenderFinal=null;
+  if(!decisionCanonicalPreparationReadyFinal()){decisionStartDiaryPreviewFinal();return;}
+  decisionDiaryPreviewRevisionFinal++;
   scheduleTableSearch('decision','decisionDecisionSearch',['decisionBody'],()=>renderDecisionView());
 }
 
@@ -1818,13 +2131,15 @@ setDecisionPageSize=function(size){
 };
 
 renderDecisionView=function(){
-  if(!decisionReady){
-    $('decisionStatus').textContent='Kommunala protokoll laddas…';
-    $('decisionPage').textContent='';
+  if(!decisionCanonicalPreparationReadyFinal()){
+    decisionStartDiaryPreviewFinal();
+    $('decisionStatus').textContent='';
+    $('decisionStatus').hidden=true;
     $('decisionMasterPane').hidden=false;
     $('decisionDetailPane').hidden=true;
     return;
   }
+  decisionDiaryPreviewRevisionFinal++;
   renderDecisionPageSizeControls();
   renderDecisionTabs();
   const tab=decisionActiveTabState();

@@ -1,3 +1,29 @@
+async function municipalWorkerReadText(source,completedBytes,expectedBytes,totalBytes){
+  const response=await fetch(source);
+  if(!response.ok)throw Error(`Kommundatan kunde inte hämtas (${response.status}).`);
+  const reader=response.body?.getReader?.();
+  if(!reader){
+    const text=await response.text(),loaded=expectedBytes||new TextEncoder().encode(text).byteLength;
+    self.postMessage({type:'load-progress',loadedBytes:completedBytes+loaded,totalBytes});
+    return {text,loaded};
+  }
+  const decoder=new TextDecoder(),chunks=[];
+  let loaded=0,lastReported=0;
+  while(true){
+    const {done,value}=await reader.read();
+    if(done)break;
+    loaded+=value.byteLength;
+    chunks.push(decoder.decode(value,{stream:true}));
+    if(loaded-lastReported>=262144){
+      lastReported=loaded;
+      self.postMessage({type:'load-progress',loadedBytes:completedBytes+loaded,totalBytes});
+    }
+  }
+  chunks.push(decoder.decode());
+  self.postMessage({type:'load-progress',loadedBytes:completedBytes+(expectedBytes||loaded),totalBytes});
+  return {text:chunks.join(''),loaded};
+}
+
 self.onmessage=async event=>{
   try{
     if(event.data?.mode==='historic'){
@@ -35,9 +61,13 @@ self.onmessage=async event=>{
       self.postMessage({type:'historic-complete'});
       return;
     }
-    const sources=event.data?.sources||[];
+    const sources=event.data?.sources||[],sourceSizes=event.data?.sourceSizes||[];
+    const totalBytes=sourceSizes.reduce((sum,size)=>sum+(Math.max(0,Number(size))||0),0);
+    let completedBytes=0;
     for(let partIndex=0;partIndex<sources.length;partIndex++){
-      const source=sources[partIndex],text=await (await fetch(source)).text();
+      const source=sources[partIndex],expectedBytes=Math.max(0,Number(sourceSizes[partIndex]))||0;
+      const loaded=await municipalWorkerReadText(source,completedBytes,expectedBytes,totalBytes);
+      const text=loaded.text;
       const marker=`window.municipalProtocolPackParts[${partIndex+1}]=`,markerIndex=text.indexOf(marker);
       if(markerIndex<0)throw Error(`Ogiltigt kommunalt datapaket: del ${partIndex+1}`);
       let json=text.slice(markerIndex+marker.length).trim();
@@ -53,6 +83,7 @@ self.onmessage=async event=>{
         }
       }
       self.postMessage({type:'part-complete',part:partIndex+1});
+      completedBytes+=expectedBytes||loaded.loaded;
     }
     self.postMessage({type:'complete'});
   }catch(error){

@@ -40,6 +40,7 @@ async function ensureDecisionDataProgressively(){
   for(let start=0;start<pack.d.length;start+=40){
     const end=Math.min(pack.d.length,start+40);
     for(let i=start;i<end;i++)docs.push({...pack.d[i],_idx:i});
+    if(typeof decisionUpdateInitialProgressFinal==='function')decisionUpdateInitialProgressFinal(52+(pack.d.length?end/pack.d.length*2:2));
     await decisionLoadYield();
   }
   decisionActivityRows=Array.isArray(pack.a)?pack.a:[];
@@ -50,6 +51,7 @@ async function ensureDecisionDataProgressively(){
       Object.entries(pointMap).forEach(([point,description])=>{const meta=pointMeta[String(point)]||{},voteId=String(voteMap[String(point)]||voteMap[point]||''),proposalType=decisionProposalTypeForPoint(doc,point);allPointRows.push({id,point:String(point),date,title,pointTitle:`${point}. ${title||description||'Ärende'}`,description:String(description||''),proposalType,url,docIndex:doc._idx,voteId,voteIds:voteId?[voteId]:[],body,bodyType,documentTitle,documentKey,diary,caseNumber,result:String(meta.result||'beslut'),sourceUrl:String(meta.source_url||url||''),localPath:String(meta.local_path||doc.lp||''),voteCount:0,yes:0,no:0,abstain:0,absent:0,fullVoteCount:0,fullYes:0,fullNo:0,fullAbstain:0,fullAbsent:0});});
       if(!byDecision.has(id))byDecision.set(id,{id,date,title,url,docIndex:doc._idx,pointMap,voteRows:[]});
     }
+    if(typeof decisionUpdateInitialProgressFinal==='function')decisionUpdateInitialProgressFinal(54+(docs.length?end/docs.length*8:8));
     decisionLoadingStatus(end,docs.length,'Laddar information',false);
     await decisionLoadYield();
   }
@@ -57,12 +59,14 @@ async function ensureDecisionDataProgressively(){
   for(let start=0;start<pack.r.length;start+=1200){
     const end=Math.min(pack.r.length,start+1200);
     for(let i=start;i<end;i+=6){const docIndex=Number(pack.r[i]),point=String(pack.r[i+1]??''),name=String(pack.r[i+2]??''),party=String(pack.r[i+3]??''),vote=String(pack.r[i+4]??''),intressentId=String(pack.r[i+5]??''),doc=docs[docIndex]||{},date=String(doc.dt||''),id=String(doc.i||`d${docIndex}`),title=String(doc.t||''),url=String(doc.u||doc.lp||''),description=decisionPointLabel(doc,point),row={docIndex,id,date,title,point,description,proposalType:decisionProposalTypeForPoint(doc,point),name,party,vote,intressentId,url,order:i/6};voteRows.push(row);if(!byDecision.has(id))byDecision.set(id,{id,date,title,url,docIndex,pointMap:doc.p||{},voteRows:[]});byDecision.get(id).voteRows.push(row);const key=`${id}|${point}`;if(!pointTotals.has(key))pointTotals.set(key,{fullVoteCount:0,fullYes:0,fullNo:0,fullAbstain:0,fullAbsent:0});const total=pointTotals.get(key);total.fullVoteCount++;if(vote==='Ja')total.fullYes++;else if(vote==='Nej')total.fullNo++;else if(vote==='Avstår')total.fullAbstain++;else if(vote==='Frånvarande')total.fullAbsent++;}
+    if(typeof decisionUpdateInitialProgressFinal==='function')decisionUpdateInitialProgressFinal(62+(pack.r.length?end/pack.r.length*8:8));
     decisionLoadingStatus(Math.ceil(end/6),voteTotal,'Laddar information',false);
     await decisionLoadYield();
   }
   for(let start=0;start<allPointRows.length;start+=200){
     const end=Math.min(allPointRows.length,start+200);
     for(let i=start;i<end;i++){const row=allPointRows[i];Object.assign(row,pointTotals.get(`${row.id}|${row.point}`)||{});}
+    if(typeof decisionUpdateInitialProgressFinal==='function')decisionUpdateInitialProgressFinal(70+(allPointRows.length?end/allPointRows.length*2:2));
     await decisionLoadYield();
   }
   decisionRows=voteRows;
