@@ -4,10 +4,9 @@ const municipalWorkEnabled=true;
 const historicPack=window.historicPack;
 let decisionPack=window.municipalProtocolPack,documentPack=window.municipalDocumentPack,decisionPackPromise=null;
 const stateFormatVersion=1;
-const municipalProtocolDataVersion='20260715-1';
+const municipalProtocolDataVersion='20260806-1';
 const municipalProtocolPackSrcs=[
-  `data/municipal-protocol-data-orebro-v2.part1.js?v=${municipalProtocolDataVersion}`,
-  `data/municipal-protocol-data-orebro-v2.part2.js?v=${municipalProtocolDataVersion}`
+  `data/municipal-protocol-data-orebro-v2.js?v=${municipalProtocolDataVersion}`
 ];
 const municipalProtocolMetadataCorrections=new Map([
   ['https://www.orebro.se/download/18.e1b4aa019e62f4e33d2509/1780564233224/2026-05-08%20V%C3%A5rd-%20och%20omsorgsn%C3%A4mnden.pdf',{
@@ -186,6 +185,60 @@ function pruneUnmatchedMunicipalAttendanceRows(documents,memberRows){
   }
   memberRows.length=write;
 }
+function municipalAttendanceIdentity(value){
+  return String(value||'').normalize('NFD').replace(/\p{M}/gu,'').toLocaleLowerCase('sv').replace(/[^a-z0-9åäö]+/giu,' ').trim();
+}
+function repairMunicipalPageBoundaryAttendance(documents,voteRows,memberRows){
+  const protocolKey=document=>[document?.dt,document?.b,document?.doc].map(value=>String(value||'')).join('|');
+  const voteNamesByProtocol=new Map();
+  for(let index=0;index<voteRows.length;index+=6){
+    const document=documents[Number(voteRows[index])],vote=String(voteRows[index+4]||''),name=String(voteRows[index+2]||'').trim(),party=String(voteRows[index+3]||'').trim();
+    if(!document||!name||vote==='Frånvarande')continue;
+    const key=protocolKey(document),identity=`${municipalAttendanceIdentity(name)}|${municipalAttendanceIdentity(party)}`;
+    if(!voteNamesByProtocol.has(key))voteNamesByProtocol.set(key,new Set());
+    voteNamesByProtocol.get(key).add(identity);
+  }
+
+  /* A continued attendance section can start on a new PDF page without its
+     heading. PDF table extraction may then retain only a wrapped surname from
+     the replacement column (for example "Muhammed") as a separate member.
+     Remove that orphan only when the full same-party name is independently
+     verified by a formal vote in the same protocol. */
+  const parsed=[];
+  for(let index=0;index<memberRows.length;index+=6){
+    parsed.push({values:memberRows.slice(index,index+6),key:[memberRows[index],memberRows[index+1],memberRows[index+2]].map(value=>String(value||'')).join('|'),name:String(memberRows[index+3]||'').trim(),party:String(memberRows[index+4]||'').trim()});
+  }
+  const retained=parsed.filter(row=>{
+    const normalizedName=municipalAttendanceIdentity(row.name),normalizedParty=municipalAttendanceIdentity(row.party);
+    if(!normalizedName||normalizedName.includes(' '))return true;
+    const duplicate=parsed.find(candidate=>candidate!==row&&candidate.key===row.key&&municipalAttendanceIdentity(candidate.party)===normalizedParty&&municipalAttendanceIdentity(candidate.name).endsWith(` ${normalizedName}`));
+    if(!duplicate)return true;
+    const verified=voteNamesByProtocol.get(row.key);
+    return !verified?.has(`${municipalAttendanceIdentity(duplicate.name)}|${normalizedParty}`)||verified.has(`${normalizedName}|${normalizedParty}`);
+  });
+  memberRows.length=0;
+  for(const row of retained)memberRows.push(...row.values);
+
+  /* A named Ja/Nej/Avstår ballot is conclusive attendance evidence. Reconcile
+     it with the protocol list so a lost page-continuation can never produce an
+     attendance count below the named voters. Diacritics are ignored solely
+     for identity matching; the source spelling already present is retained. */
+  const identitiesByProtocol=new Map();
+  for(let index=0;index<memberRows.length;index+=6){
+    const key=[memberRows[index],memberRows[index+1],memberRows[index+2]].map(value=>String(value||'')).join('|');
+    if(!identitiesByProtocol.has(key))identitiesByProtocol.set(key,new Set());
+    identitiesByProtocol.get(key).add(`${municipalAttendanceIdentity(memberRows[index+3])}|${municipalAttendanceIdentity(memberRows[index+4])}`);
+  }
+  for(let index=0;index<voteRows.length;index+=6){
+    const document=documents[Number(voteRows[index])],vote=String(voteRows[index+4]||''),name=String(voteRows[index+2]||'').trim(),party=String(voteRows[index+3]||'').trim();
+    if(!document||!name||vote==='Frånvarande')continue;
+    const key=protocolKey(document),identity=`${municipalAttendanceIdentity(name)}|${municipalAttendanceIdentity(party)}`;
+    if(!identitiesByProtocol.has(key))identitiesByProtocol.set(key,new Set());
+    if(identitiesByProtocol.get(key).has(identity))continue;
+    memberRows.push(String(document.dt||''),String(document.b||''),String(document.doc||''),name,party,'närvaro verifierad genom votering');
+    identitiesByProtocol.get(key).add(identity);
+  }
+}
 function disambiguateMunicipalProtocolDocumentIds(documents){
   const seen=new Set();
   for(let index=0;index<documents.length;index++){
@@ -300,19 +353,20 @@ async function decodeHistoricPackText(value){if(typeof DecompressionStream!=='fu
 async function inflateHistoricData(p){if(typeof p==='string'){const json=await decodeHistoricPackText(p.startsWith('gz:')?p.slice(3):p);p=JSON.parse(json);}else if(p&&typeof p==='object'&&p.f==='gz'&&typeof p.d==='string'){const json=await decodeHistoricPackText(p.d);p=JSON.parse(json);}const sc=new Set(p.sc||[]);return {schema_version:p.v,columns:p.c,rows:p.r.map(a=>{const o={};for(let i=0;i<p.c.length;i++){const v=a[i];o[p.c[i]]=sc.has(i)&&v!==null?p.s[v]:v;}return o;})};}
 function loadScriptOnce(src){return new Promise((resolve,reject)=>{const existing=[...document.scripts].find(s=>s.getAttribute('src')===src);if(existing){existing.addEventListener('load',resolve,{once:true});existing.addEventListener('error',reject,{once:true});return;}const script=document.createElement('script');script.src=src;script.defer=true;script.onload=resolve;script.onerror=()=>reject(Error(`Kunde inte ladda ${src}`));document.head.appendChild(script);});}
 function assembleMunicipalProtocolPackParts(){
-  const parts=window.municipalProtocolPackParts||{},part1=parts[1],part2=parts[2];
-  if(!part1||!part2)return null;
-  const documents=[...(part1.d||[]),...(part2.d||[])],voteRows=[...(part2.r||[])],memberRows=[...(part2.mr||[])];
+  const parts=window.municipalProtocolPackParts||{},ordered=Object.keys(parts).map(Number).filter(Number.isFinite).sort((a,b)=>a-b).map(key=>parts[key]),part1=ordered[0];
+  if(!part1)return null;
+  const documents=ordered.flatMap(part=>part.d||[]),voteRows=ordered.flatMap(part=>part.r||[]),positionRows=ordered.flatMap(part=>part.pr||[]),memberRows=ordered.flatMap(part=>part.mr||[]);
   applyMunicipalProtocolMetadataCorrections(documents,memberRows);
   cleanMunicipalProtocolExtractedFields(documents);
   synchronizeMunicipalProtocolTitles(documents);
   pruneUnmatchedMunicipalAttendanceRows(documents,memberRows);
+  repairMunicipalPageBoundaryAttendance(documents,voteRows,memberRows);
   disambiguateMunicipalProtocolDocumentIds(documents);
   disambiguateMunicipalDecisionPointIds(documents);
   repairMunicipalVoteEvents(documents,voteRows);
   repairMunicipalTruncatedVoteMeanings(documents);
   markMunicipalVoteCountConflicts(documents,voteRows);
-  return window.municipalProtocolPack={...part1,d:documents,r:voteRows,pr:part2.pr||[],mr:memberRows};
+  return window.municipalProtocolPack={...part1,d:documents,r:voteRows,pr:positionRows,mr:memberRows};
 }
 async function ensureDecisionPackLoaded(){if(!municipalWorkEnabled)throw Error('Kommunvyn är avstängd.');if(decisionPack?.d?.length)return decisionPack;if(window.municipalProtocolPack?.d?.length&&window.municipalProtocolPack!==decisionPack){decisionPack=window.municipalProtocolPack;return decisionPack;}const assembled=assembleMunicipalProtocolPackParts();if(assembled?.d?.length){decisionPack=assembled;return decisionPack;}if(!decisionPackPromise)decisionPackPromise=Promise.all(municipalProtocolPackSrcs.map(loadScriptOnce)).then(()=>{decisionPack=assembleMunicipalProtocolPackParts()||window.municipalProtocolPack;if(!decisionPack?.d?.length)throw Error('Kommundatan kunde inte läsas in.');return decisionPack;});return decisionPackPromise;}
 

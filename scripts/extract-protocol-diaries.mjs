@@ -52,19 +52,16 @@ const manualProtocolDiaryByUrl = {
 function loadPack() {
   const context = { window: {} };
   vm.createContext(context);
-  for (const file of [
-    'data/municipal-protocol-data-orebro-v2.part1.js',
-    'data/municipal-protocol-data-orebro-v2.part2.js'
-  ]) {
+  for (const file of ['data/municipal-protocol-data-orebro-v2.js']) {
     vm.runInContext(fs.readFileSync(path.join(root, file), 'utf8'), context);
   }
-  const parts = context.window.municipalProtocolPackParts || {};
+  const parts = context.window.municipalProtocolPackParts || {}, ordered = Object.keys(parts).map(Number).sort((a,b)=>a-b).map(key=>parts[key]);
   return {
-    ...parts[1],
-    d: [...(parts[1]?.d || []), ...(parts[2]?.d || [])],
-    r: parts[2]?.r || [],
-    pr: parts[2]?.pr || [],
-    mr: parts[2]?.mr || []
+    ...ordered[0],
+    d: ordered.flatMap(part=>part.d||[]),
+    r: ordered.flatMap(part=>part.r||[]),
+    pr: ordered.flatMap(part=>part.pr||[]),
+    mr: ordered.flatMap(part=>part.mr||[])
   };
 }
 

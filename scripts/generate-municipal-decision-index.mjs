@@ -7,8 +7,9 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outputPath = path.join(root, 'data', 'municipal-decision-table-index.ndjson.gz');
 const bootstrapOutputPath = path.join(root, 'data', 'municipal-decision-table-bootstrap.js');
+const meetingDetailsOutputPath = path.join(root, 'data', 'municipal-decision-meeting-details.js');
 const partsOutputDirectory = path.join(root, 'data', 'municipal-decision-table-index-parts');
-const indexVersion = '20260805-2';
+const indexVersion = '20260806-2';
 const bootstrapRowCount = 8;
 const partRowCount = 128;
 const domElement = {
@@ -41,8 +42,7 @@ vm.runInContext(`
   function fuzzySearchTextMatches(text,query){return String(text).includes(String(query))}
 `, context);
 for (const relative of [
-  'data/municipal-protocol-data-orebro-v2.part1.js',
-  'data/municipal-protocol-data-orebro-v2.part2.js',
+  'data/municipal-protocol-data-orebro-v2.js',
   'data/municipal-protocol-diary-data.js',
   'js/app-core.js',
   'js/municipal-protocols-tab.js',
@@ -54,6 +54,100 @@ vm.runInContext('decisionPack=assembleMunicipalProtocolPackParts(); ensureDecisi
 const rows = vm.runInContext('decisionAllPointRows', context);
 const diaryByUrl = context.window.municipalProtocolDiaryPack?.byUrl || {};
 const documents = vm.runInContext('decisionPack.d', context);
+const proposalKeys = vm.runInContext('decisionAllPointRows.map(decisionProposalKey)', context);
+
+/* A table row is clickable as soon as it reaches the browser. Generate its
+   complete, unfiltered item view at the same boundary so opening one row never
+   has to download and prepare the full municipal protocol pack first. */
+const fastDetailBundle = vm.runInContext(`
+  (()=>{
+    const decisionsById=new Map(decisionDecisionRows.map(row=>[String(row.id||''),row]));
+    const voteRowsByPoint=new Map();
+    for(const voteRow of decisionRows){
+      const key=String(voteRow.id||'')+'|'+String(voteRow.point||'');
+      if(!voteRowsByPoint.has(key))voteRowsByPoint.set(key,[]);
+      voteRowsByPoint.get(key).push(voteRow);
+    }
+    const meetingsByProtocol=new Map(decisionAllPointRows.filter(row=>row.isMeeting).map(row=>[row.meetingKey,row]));
+    const attendanceByKey=new Map();
+    const attendanceHtml=row=>{
+      const key=String(row?.attendanceKey||row?.meetingKey||'');
+      if(!attendanceByKey.has(key))attendanceByKey.set(key,decisionAttendancePanelHtmlFinal(row));
+      return attendanceByKey.get(key)||'';
+    };
+    const meetingFor=row=>meetingsByProtocol.get(decisionMeetingProtocolKey(row))||meetingsByProtocol.get(decisionMeetingKey(row?.date,row?.body))||null;
+    const meetingDetailCache=new Map();
+    const meetingDetail=meeting=>{
+      if(!meeting)return null;
+      const key=decisionProposalKey(meeting);
+      if(meetingDetailCache.has(key))return meetingDetailCache.get(key);
+      const source=decisionProtocolFirstPageUrlFinal(meeting),protocolDiary=decisionProtocolDiaryNumberFinal(meeting);
+      const meetingAttendance=attendanceHtml(meeting);
+      const result={
+        row:{
+          id:meeting.id,point:meeting.point,date:meeting.date,title:meeting.title,pointTitle:meeting.pointTitle,
+          protocolHeader:meeting.protocolHeader,body:meeting.body,documentTitle:meeting.documentTitle,
+          diary:meeting.diary,protocolDiary,proposalType:meeting.proposalType,result:meeting.result,
+          sourceUrl:meeting.sourceUrl,url:meeting.url,localPath:meeting.localPath,docIndex:meeting.docIndex,
+          meetingKey:meeting.meetingKey,meetingDecisionCount:meeting.meetingDecisionCount,
+          meetingMatterCount:meeting.meetingMatterCount,isMeeting:true
+        },
+        detail:{
+          isMeeting:true,
+          title:'Sammantr\u00e4de \u00b7 '+String(meeting.body||'')+' \u00b7 '+String(meeting.date||''),
+          metaText:[meeting.documentTitle||'Protokoll',protocolDiary].filter(Boolean).join(' \u00b7 '),
+          sourceUrl:source,
+          sourceLabel:'\u00d6ppna hela protokollet',
+          overviewHtml:
+            '<div class="decision-hierarchy"><div class="decision-hierarchy-item primary"><span>Sammantr\u00e4de</span><strong>'+esc(meeting.body)+'</strong><small>'+esc(meeting.date)+'</small></div></div>'+
+            '<div class="card"><span>Beslutspunkter</span><b>'+esc(fmtInt(meeting.meetingDecisionCount||0))+'</b></div>'+
+            '<div class="card"><span>\u00c4renden</span><b>'+esc(fmtInt(meeting.meetingMatterCount||0))+'</b></div>',
+          status:'Hela protokollet. '+fmtInt(meeting.meetingDecisionCount||0)+' beslutspunkter har registrerats f\u00f6r sammantr\u00e4det.',
+          groupsHtml:
+            '<article class="decision-point-card meeting-protocol-card"><h3>Protokoll</h3><p>'+esc(meeting.documentTitle||'Hela protokollet f\u00f6r sammantr\u00e4det.')+'</p>'+
+            (source?'<a href="'+esc(source)+'" target="_blank" rel="noopener noreferrer">\u00d6ppna hela protokollet</a>':'')+'</article>'+meetingAttendance
+        },
+        attendanceHtml:meetingAttendance
+      };
+      meetingDetailCache.set(key,result);
+      return result;
+    };
+    const details=decisionAllPointRows.map(sourceRow=>{
+      const proposal=decisionHydrateTextFieldsFinal(sourceRow);
+      if(proposal.isMeeting)return meetingDetail(proposal).detail;
+      const proposalKey=decisionProposalKey(proposal);
+      const proposalData=decisionProposalTabData(proposal);
+      const tab={kind:'decision',id:proposal.id,...proposalData,proposalKey};
+      const decision=decisionsById.get(String(proposal.id||''))||{id:proposal.id,date:proposal.date,title:proposal.title,url:proposal.url};
+      const detailRows=voteRowsByPoint.get(String(proposal.id||'')+'|'+String(proposal.point||''))||[];
+      const pointGroups=decisionPointPartyGroups(detailRows,proposal);
+      const textHtml=decisionDetailTextHtml(proposal);
+      const voteHtml=pointGroups.length
+        ?pointGroups.map((group,index)=>decisionPointPartyHtmlCanonicalFinal(group,index,pointGroups.length,proposal)).join('')
+        :'<div class="decision-vote-panel">Denna beslutspunkt saknar formell votering.</div>';
+      const extractionNotice=proposal.extractionStatus==='decision_not_extracted'
+        ?'<article class="decision-point-card decision-extraction-notice"><h3>Beslut</h3><p>Ingen formell beslutsrubrik kunde extraheras ur k\u00e4llprotokollet. \u00c4rendet visas \u00e4nd\u00e5 med sin k\u00e4lla och \u00f6vriga protokolluppgifter.</p></article>'
+        :'';
+      const descriptionUnavailable=!String(proposal.abstractText||proposal.description||'').trim();
+      const textContent=(descriptionUnavailable?decisionDetailUnavailableTextFinal():'')+textHtml;
+      const meeting=meetingFor(proposal);
+      return {
+        isMeeting:false,
+        title:proposal.protocolHeader||proposal.pointTitle||proposal.title||'\u00c4rende',
+        metaText:[proposal.body,decision.date,proposal.diary].filter(Boolean).join(' \u00b7 '),
+        sourceUrl:decisionAnchoredSourceUrl(proposal,decision.url),
+        sourceLabel:'\u00d6ppna k\u00e4llan',
+        overviewHtml:decisionDetailHierarchyHtml(decision,proposal,tab)+decisionDetailCanonicalSummaryCardsFinal(detailRows,proposal),
+        status:decisionDetailCanonicalStatusFinal(detailRows,proposal),
+        groupsHtml:extractionNotice+(textContent||decisionDetailUnavailableTextFinal())+voteHtml,
+        meetingKey:meeting?decisionProposalKey(meeting):''
+      };
+    });
+    return {details,meetings:Object.fromEntries(meetingDetailCache)};
+  })()
+`, context);
+const fastDetails = fastDetailBundle.details;
+const fastMeetingDetails = fastDetailBundle.meetings;
 
 if (process.argv.includes('--inspect')) {
   const keys = [...new Set(rows.flatMap(row => Object.keys(row)))].sort();
@@ -70,12 +164,23 @@ const keepFields = [
   'fullAbsent', 'statedYes', 'statedNo', 'statedAbstain', 'statedAbsent',
   'isMeeting', 'meetingKey', 'matterId', 'protocolHeader', 'canonicalMatterHeader',
   'abstractText', 'fullDecisionText', 'meetingSearchText', 'meetingDecisionCount',
-  'meetingMatterCount', 'documentKey', 'attendanceKey', 'sourcePage', 'sourcePageEnd'
+  'meetingMatterCount', 'documentKey', 'attendanceKey', 'sourcePage', 'sourcePageEnd',
+  'fastDetail'
 ];
-const cleanRow = row => {
+const proposalPartByKey = new Map(proposalKeys.map((key,index)=>[key,Math.floor(index/partRowCount)+1]));
+const annotateDetailTargets = detail => {
+  if(!detail)return detail;
+  const annotate = html => String(html||'').replace(/data-proposal-key="([^"]+)"/g,(match,key)=>{
+    const part=proposalPartByKey.get(key);
+    return part?`${match} data-index-part="${part}"`:match;
+  });
+  detail.groupsHtml=annotate(detail.groupsHtml);
+  return detail;
+};
+const cleanRow = (row,index) => {
   const output = {};
   for (const field of keepFields) {
-    const value = row[field];
+    const value = field==='fastDetail'?annotateDetailTargets(fastDetails[index]):row[field];
     if (value === undefined || value === null || value === '' || value === false) continue;
     if (Array.isArray(value) && !value.length) continue;
     output[field] = value;
@@ -89,7 +194,9 @@ const cleanRow = row => {
 };
 
 const cleanRows = rows.map(cleanRow);
-const lines = [JSON.stringify({ type: 'meta', version: indexVersion, total: rows.length }), ...cleanRows.map(JSON.stringify)];
+const bootstrapMeetingKeys = new Set(cleanRows.slice(0,bootstrapRowCount).map(row=>row.fastDetail?.meetingKey).filter(Boolean));
+const bootstrapMeetingDetails = Object.fromEntries(Object.entries(fastMeetingDetails).filter(([key])=>bootstrapMeetingKeys.has(key)));
+const lines = [JSON.stringify({ type: 'meta', version: indexVersion, total: rows.length, meetings: fastMeetingDetails }), ...cleanRows.map(JSON.stringify)];
 const ndjson = `${lines.join('\n')}\n`;
 fs.writeFileSync(outputPath, gzipSync(ndjson, { level: 9 }));
 fs.mkdirSync(partsOutputDirectory, { recursive: true });
@@ -107,19 +214,25 @@ for (let part = 0; part < partCount; part++) {
   const partName = `part-${String(part + 1).padStart(3, '0')}.js`;
   fs.writeFileSync(
     path.join(partsOutputDirectory, partName),
-    `window.municipalDecisionTableIndexParts=window.municipalDecisionTableIndexParts||{};window.municipalDecisionTableIndexParts[${part + 1}]=${JSON.stringify(compactRows)};\n`
+    `window.municipalDecisionTableIndexCompressedParts=window.municipalDecisionTableIndexCompressedParts||{};window.municipalDecisionTableIndexCompressedParts[${part + 1}]=${JSON.stringify(gzipSync(Buffer.from(JSON.stringify(compactRows)),{level:9}).toString('base64'))};\n`
   );
 }
 fs.writeFileSync(
   bootstrapOutputPath,
-  `window.municipalDecisionTableBootstrap=${JSON.stringify({ version: indexVersion, total: rows.length, partCount, fields: keepFields, rows: cleanRows.slice(0, bootstrapRowCount) })};\n`
+  `window.municipalDecisionTableBootstrap=${JSON.stringify({ version: indexVersion, total: rows.length, partCount, fields: keepFields, meetings: bootstrapMeetingDetails, rows: cleanRows.slice(0, bootstrapRowCount) })};\n`
+);
+fs.writeFileSync(
+  meetingDetailsOutputPath,
+  `window.municipalDecisionMeetingDetailsCompressed=${JSON.stringify(gzipSync(Buffer.from(JSON.stringify(fastMeetingDetails)),{level:9}).toString('base64'))};\n`
 );
 console.log(JSON.stringify({
   output: path.relative(root, outputPath),
   bootstrapOutput: path.relative(root, bootstrapOutputPath),
+  meetingDetailsOutput: path.relative(root, meetingDetailsOutputPath),
   partsOutputDirectory: path.relative(root, partsOutputDirectory),
   partCount,
   rows: rows.length,
   bytes: fs.statSync(outputPath).size,
-  bootstrapBytes: fs.statSync(bootstrapOutputPath).size
+  bootstrapBytes: fs.statSync(bootstrapOutputPath).size,
+  meetingDetailsBytes: fs.statSync(meetingDetailsOutputPath).size
 }));

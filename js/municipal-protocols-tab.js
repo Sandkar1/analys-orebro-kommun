@@ -2948,6 +2948,19 @@ function decisionMeetingContextHtmlFinal(proposal){
   return `<section class="meeting-context"><span>Sammanträde</span><button type="button" data-open-meeting data-id="${esc(meeting.id)}" data-proposal-key="${esc(decisionProposalKey(meeting))}">${esc([meeting.body,meeting.date].filter(Boolean).join(' · '))}</button></section>`;
 }
 
+function decisionSetDetailMeetingContextFinal(meeting,onOpen=null){
+  const host=$('decisionDetailContext');
+  if(!host)return;
+  if(!meeting){host.hidden=true;host.replaceChildren();return;}
+  host.hidden=false;
+  host.innerHTML=`<span>Sammanträde</span><button type="button" data-open-meeting data-id="${esc(meeting.id)}" data-proposal-key="${esc(decisionProposalKey(meeting))}">${esc([meeting.body,meeting.date].filter(Boolean).join(' · '))}</button>`;
+  host.querySelector('button')?.addEventListener('click',event=>{
+    event.preventDefault();
+    if(onOpen)onOpen(meeting);
+    else openDecisionDetail(meeting.id,decisionProposalKey(meeting));
+  });
+}
+
 function decisionAttendancePanelHtmlFinal(proposal){
   const attendance=decisionMeetingAttendanceHtml(proposal);
   return attendance.includes('meeting-attendance-empty')?'':`<section class="meeting-attendance-panel">${attendance}</section>`;
@@ -2972,6 +2985,7 @@ function decisionBindCanonicalDetailLinksFinal(){
 }
 
 function renderCanonicalMeetingDetailFinal(meeting){
+  decisionSetDetailMeetingContextFinal(null);
   const source=decisionProtocolFirstPageUrlFinal(meeting),protocolDiary=decisionProtocolDiaryNumberFinal(meeting);
   $('decisionDetailTitle').textContent=`Sammanträde · ${meeting.body} · ${meeting.date}`;
   $('decisionDetailMeta').innerHTML=`<span>${esc([meeting.documentTitle||'Protokoll',protocolDiary].filter(Boolean).join(' · '))}</span>${source?` <a class="decision-official-link" href="${esc(source)}" target="_blank" rel="noopener noreferrer">Öppna hela protokollet</a>`:''}`;
@@ -3020,7 +3034,8 @@ renderDecisionDetailView=function(tab){
   const extractionNotice=proposal.extractionStatus==='decision_not_extracted'?'<article class="decision-point-card decision-extraction-notice"><h3>Beslut</h3><p>Ingen formell beslutsrubrik kunde extraheras ur källprotokollet. Ärendet visas ändå med sin källa och övriga protokolluppgifter.</p></article>':'';
   const descriptionUnavailable=!String(proposal.abstractText||proposal.description||'').trim();
   const textContent=(descriptionUnavailable?decisionDetailUnavailableTextFinal():'')+textHtml;
-  $('decisionDetailGroups').innerHTML=extractionNotice+(textContent||decisionDetailUnavailableTextFinal())+decisionMeetingContextHtmlFinal(proposal)+voteHtml+decisionAttendancePanelHtmlFinal(proposal);
+  $('decisionDetailGroups').innerHTML=extractionNotice+(textContent||decisionDetailUnavailableTextFinal())+voteHtml+decisionAttendancePanelHtmlFinal(proposal);
+  decisionSetDetailMeetingContextFinal(decisionMeetingRowFor(proposal));
   decisionBindCanonicalDetailLinksFinal();
   $('decisionMasterPane').hidden=true;
   $('decisionDetailPane').hidden=false;

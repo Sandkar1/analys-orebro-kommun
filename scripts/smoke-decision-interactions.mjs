@@ -4,10 +4,11 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { createReadStream, stat } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const deepAudit=process.argv.includes('--deep');
+const fileAudit=process.argv.includes('--file');
 const chromePath=process.env.CHROME_PATH||'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const mime=new Map([['.html','text/html; charset=utf-8'],['.js','text/javascript; charset=utf-8'],['.css','text/css; charset=utf-8'],['.gz','application/gzip']]);
 const server=http.createServer((request,response)=>{
@@ -24,7 +25,8 @@ await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0
 const port=server.address().port;
 const debugPort=await new Promise((resolve,reject)=>{const probe=http.createServer();probe.once('error',reject);probe.listen(0,'127.0.0.1',()=>{const value=probe.address().port;probe.close(error=>error?reject(error):resolve(value));});});
 const profile=await mkdtemp(path.join(os.tmpdir(),'decision-interactions-smoke-'));
-const chrome=spawn(chromePath,['--headless=new','--disable-gpu','--no-first-run','--no-default-browser-check','--disable-background-networking',`--user-data-dir=${profile}`,`--remote-debugging-port=${debugPort}`,`http://127.0.0.1:${port}/`],{stdio:['ignore','ignore','pipe'],windowsHide:true});
+const targetUrl=fileAudit?pathToFileURL(path.join(root,'index.html')).href:`http://127.0.0.1:${port}/`;
+const chrome=spawn(chromePath,['--headless=new','--disable-gpu','--no-first-run','--no-default-browser-check','--disable-background-networking',`--user-data-dir=${profile}`,`--remote-debugging-port=${debugPort}`,targetUrl],{stdio:['ignore','ignore','pipe'],windowsHide:true});
 let chromeError='';
 chrome.stderr.on('data',chunk=>{chromeError+=String(chunk);});
 
@@ -59,8 +61,10 @@ try{
     const errors=[];
     addEventListener('error',event=>errors.push(String(event.error?.stack||event.message)));
     addEventListener('unhandledrejection',event=>errors.push(String(event.reason?.stack||event.reason)));
+    const initialLoadStarted=performance.now();
     await setTopView('decision');
     for(let attempt=0;attempt<800&&!decisionProgressiveSearchStateFinal?.finished;attempt++)await wait(20);
+    const initialLoadMs=performance.now()-initialLoadStarted;
     const input=document.querySelector('#decisionDecisionSearch');
     const values=['s','sk','sko','skol','skola','skolan','skolans','skolansx','skolansxy','skolansxyz'];
     const samples=[],started=performance.now();
@@ -75,7 +79,18 @@ try{
     await wait(500);
     const geometryChanges=samples.slice(1).filter((sample,index)=>['paneHeight','paneTop','overviewWidth','firstTop','scrollWidth'].some(key=>sample[key]!==samples[index][key])).length;
     input.value='skola';input.dispatchEvent(new Event('input',{bubbles:true}));
-    for(let attempt=0;attempt<800&&!(decisionProgressiveSearchStateFinal?.key==='skola'&&decisionProgressiveSearchStateFinal?.finished);attempt++)await wait(20);
+    const incrementalCounts=[];
+    for(let attempt=0;attempt<800;attempt++){
+      const state=decisionProgressiveSearchStateFinal;
+      if(state?.key==='skola'){
+        if(!state.finished)incrementalCounts.push(document.querySelectorAll('#decisionBody tr').length);
+        if(state.finished)break;
+      }
+      await wait(20);
+    }
+    const positiveIncrementalCounts=incrementalCounts.filter(count=>count>0);
+    const incrementalSteps=[...new Set(positiveIncrementalCounts)];
+    const incrementalRendered=incrementalSteps.length>=2&&positiveIncrementalCounts.every((count,index)=>index===0||count>=positiveIncrementalCounts[index-1]);
     const searchFinished=decisionProgressiveSearchStateFinal?.key==='skola'&&decisionProgressiveSearchStateFinal?.finished;
     const auditKey='case_body_kommunfullmaktige_2024_05_14_123|p|123';
     const auditRow=decisionTableIndexRowsFinal.find(row=>decisionProposalKey(row)===auditKey);
@@ -90,6 +105,26 @@ try{
     let deep=null;
     if(${deepAudit?'true':'false'}){
       const indexedHeadings=[...document.querySelectorAll('#decisionDetailGroups h3')].map(node=>node.textContent.trim());
+      const indexedVoteSections=[...document.querySelectorAll('#decisionDetailGroups .decision-vote-type')];
+      const indexedYesSection=indexedVoteSections.find(section=>section.querySelector('h4')?.textContent.trim().startsWith('Ja'))||null;
+      const indexedContext=document.querySelector('#decisionDetailContext');
+      const indexedHeader=document.querySelector('.decision-detail-head');
+      const indexedOverview=document.querySelector('#decisionDetailOverview');
+      const indexedContextRect=indexedContext?.getBoundingClientRect(),indexedHeaderRect=indexedHeader?.getBoundingClientRect(),indexedOverviewRect=indexedOverview?.getBoundingClientRect();
+      const coldDetail={
+        canonicalReady:decisionCanonicalPreparationReadyFinal(),
+        hasFastDetail:!!auditRow?.fastDetail,
+        pendingCanonical:!!decisionActiveTabState()?.pendingCanonical,
+        completeHeadings:['Ärendebeskrivning','Beslutsunderlag','Förslag till beslut','Yrkanden','Proposition','Beslut','Votering','Närvaro'].every(heading=>indexedHeadings.some(value=>value.startsWith(heading))),
+        reference:!!document.querySelector('#decisionDetailGroups .decision-text-ref'),
+        attendance:!!document.querySelector('#decisionDetailGroups .meeting-attendance-panel'),
+        attendanceCount:Number(document.querySelector('#decisionDetailGroups .meeting-attendance h3 b')?.textContent||0),
+        standaloneMuhammed:[...document.querySelectorAll('#decisionDetailGroups .meeting-attendance li strong')].some(node=>node.textContent.trim()==='Muhammed'),
+        partyCards:indexedYesSection?.querySelectorAll('.decision-point-party').length||0,
+        contextVisible:!!indexedContext&&!indexedContext.hidden,
+        contextInHeader:indexedContext?.parentElement===indexedHeader&&indexedContextRect.bottom<=indexedOverviewRect.top&&indexedContextRect.top>=indexedHeaderRect.top,
+        contextInGroups:!!document.querySelector('#decisionDetailGroups .meeting-context')
+      };
       decisionActiveTab=0;renderDecisionView();
       const canonicalStarted=performance.now();
       await ensureDecisionCanonicalDataFinal();
@@ -103,8 +138,9 @@ try{
       const proposal=payload?.proposal||null;
       const sourceDoc=proposal?(decisionPack?.d||[])[proposal.docIndex]||{}:{};
       const finalHeadings=[...document.querySelectorAll('#decisionDetailGroups h3')].map(node=>node.textContent.trim());
+      const finalAttendanceCount=Number(document.querySelector('#decisionDetailGroups .meeting-attendance h3 b')?.textContent||0);
       const descriptionText=document.querySelector('#decisionDetailGroups .decision-text-card')?.textContent.trim().slice(0,300)||'';
-      const meetingLinkFound=!!document.querySelector('#decisionDetailGroups [data-open-meeting]');
+      const meetingLinkFound=!!document.querySelector('#decisionDetailContext [data-open-meeting]');
       const attendanceFound=!!document.querySelector('#decisionDetailGroups .meeting-attendance-panel');
       const voteSections=[...document.querySelectorAll('#decisionDetailGroups .decision-vote-type')];
       const yesSection=voteSections.find(section=>section.querySelector('h4')?.textContent.trim().startsWith('Ja'))||null;
@@ -118,7 +154,7 @@ try{
       const referenceTargetTab=decisionActiveTabState();
       const referenceTargetProposal=referenceTargetTab?.kind==='decision'?decisionDetailPayload(referenceTargetTab)?.proposal:null;
       decisionActiveTab=originalTabIndex;renderDecisionView();
-      const meetingButton=document.querySelector('#decisionDetailGroups [data-open-meeting]');
+      const meetingButton=document.querySelector('#decisionDetailContext [data-open-meeting]');
       meetingButton?.click();
       const meetingTargetTab=decisionActiveTabState();
       const meetingTargetProposal=meetingTargetTab?.kind==='decision'?decisionDetailPayload(meetingTargetTab)?.proposal:null;
@@ -127,6 +163,7 @@ try{
         title:document.querySelector('#decisionDetailTitle')?.textContent||'',
         protocolCard:!!document.querySelector('#decisionDetailGroups .meeting-protocol-card'),
         attendance:!!document.querySelector('#decisionDetailGroups .meeting-attendance-panel'),
+        contextHidden:!!document.querySelector('#decisionDetailContext')?.hidden,
         meta:document.querySelector('#decisionDetailMeta')?.textContent||''
       };
       const missingRow=decisionAllPointRows.find(row=>{
@@ -137,7 +174,7 @@ try{
       if(missingRow)openDecisionDetail(missingRow.id,decisionProposalKey(missingRow));
       const missingDescriptionFallback=!!document.querySelector('#decisionDetailGroups .decision-description-unavailable');
       deep={
-        canonicalMs,delayedActiveKind,indexedHeadings,finalHeadings,
+        canonicalMs,delayedActiveKind,indexedHeadings,finalHeadings,finalAttendanceCount,coldDetail,
         hydratedTab:hydratedTab?{point:hydratedTab.point||'',sourcePoint:hydratedTab.sourcePoint||'',sourcePoints:hydratedTab.sourcePoints||[]}:null,
         canonicalKeyMatches:decisionAllPointRows.filter(row=>decisionProposalKey(row)===auditKey).length,
         canonicalIdPoints:decisionAllPointRows.filter(row=>row.id==='case_body_kommunfullmaktige_2024_05_14_123').map(row=>String(row.point)).slice(0,20),
@@ -150,19 +187,33 @@ try{
         missingDescriptionKey:missingRow?decisionProposalKey(missingRow):'',missingDescriptionFallback
       };
     }
-    return {clickKey,clickMs,detailOpened,searchFinished,errors,geometryChanges,samples,deep};
+    return {mode:location.protocol==='file:'?'file':'http',initialLoadMs,clickKey,clickMs,detailOpened,searchFinished,incrementalRendered,incrementalSteps,errors,geometryChanges,samples,deep};
   })()`);
+  await evaluate(cdp,`(()=>{const input=document.querySelector('#decisionDecisionSearch');input.value='reload-persistence-check';input.dispatchEvent(new Event('input',{bubbles:true}));return input.value})()`);
+  await cdp.send('Page.enable');
+  await cdp.send('Page.reload',{ignoreCache:true});
+  for(let attempt=0;attempt<200;attempt++){
+    const ready=await evaluate(cdp,`document.readyState==='complete'&&typeof restoreDecisionSearchAfterReload==='function'&&decisionSearchQuery==='reload-persistence-check'&&document.querySelector('#decisionDecisionSearch')?.value==='reload-persistence-check'`).catch(()=>false);
+    if(ready)break;
+    await new Promise(resolve=>setTimeout(resolve,25));
+  }
+  result.reloadSearch=await evaluate(cdp,`({field:document.querySelector('#decisionDecisionSearch')?.value||'',query:decisionSearchQuery})`);
   console.log(JSON.stringify(result,null,2));
-  if(!result.detailOpened||!result.searchFinished||result.errors.length||result.geometryChanges)process.exitCode=1;
+  if(!result.detailOpened||!result.searchFinished||!result.incrementalRendered||result.errors.length||result.geometryChanges||result.reloadSearch?.field!=='reload-persistence-check'||result.reloadSearch?.query!=='reload-persistence-check')process.exitCode=1;
   if(deepAudit&&(
     result.deep?.delayedActiveKind!=='list'||
+    result.deep?.finalAttendanceCount!==82||
+    result.deep?.coldDetail?.canonicalReady||
+    !result.deep?.coldDetail?.hasFastDetail||result.deep?.coldDetail?.pendingCanonical||
+    !result.deep?.coldDetail?.completeHeadings||!result.deep?.coldDetail?.reference||!result.deep?.coldDetail?.attendance||result.deep?.coldDetail?.attendanceCount!==82||result.deep?.coldDetail?.standaloneMuhammed||
+    result.deep?.coldDetail?.partyCards!==8||!result.deep?.coldDetail?.contextVisible||!result.deep?.coldDetail?.contextInHeader||result.deep?.coldDetail?.contextInGroups||
     result.deep?.hydratedTab?.sourcePoints?.[0]!=='123'||
     !result.deep?.proposalFields?.abstractLength||
     !result.deep?.descriptionText||
     !result.deep?.referenceFound||!result.deep?.referenceOpened||
     result.deep?.referenceTarget?.date!=='2024-05-07'||
     !result.deep?.meetingLinkFound||!result.deep?.attendanceFound||
-    !result.deep?.meetingView?.isMeeting||!result.deep?.meetingView?.protocolCard||!result.deep?.meetingView?.attendance||
+    !result.deep?.meetingView?.isMeeting||!result.deep?.meetingView?.protocolCard||!result.deep?.meetingView?.attendance||!result.deep?.meetingView?.contextHidden||
     !result.deep?.missingDescriptionKey||!result.deep?.missingDescriptionFallback||
     result.deep?.voteLayout?.partyCards!==8||
     result.deep?.voteLayout?.noTop-result.deep?.voteLayout?.yesBottom>30

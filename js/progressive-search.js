@@ -3,8 +3,8 @@ const progressiveSearchJobsFinal=new Map();
 const progressiveSearchHandlersFinal=new Map();
 const scheduleTableSearchBeforeProgressiveFinal=scheduleTableSearch;
 
-const municipalDataWorkerSrcFinal='js/municipal-data-loader-worker.js?v=20260805-3';
-const municipalProtocolPackByteSizesFinal=[24116161,5507978];
+const municipalDataWorkerSrcFinal='js/municipal-data-loader-worker.js?v=20260806-2';
+const municipalProtocolPackByteSizesFinal=[29624019];
 function progressiveCreateDataWorkerFinal(){
   if(typeof Worker!=='function'||window.location.protocol==='file:')return null;
   try{return new Worker(municipalDataWorkerSrcFinal);}
@@ -13,9 +13,9 @@ function progressiveCreateDataWorkerFinal(){
 
 let decisionPackWorkerPromiseFinal=null;
 async function decisionAssembleWorkerPartsFinal(parts){
-  const part1=parts[1],part2=parts[2];
-  if(!part1||!part2)throw Error('Kommundatans delar kunde inte sättas samman.');
-  const documents=(part1.d||[]).concat(part2.d||[]),voteRows=(part2.r||[]).slice(),memberRows=(part2.mr||[]).slice();
+  const ordered=Object.keys(parts||{}).map(Number).filter(Number.isFinite).sort((a,b)=>a-b).map(key=>parts[key]),part1=ordered[0];
+  if(!part1)throw Error('Kommundatans delar kunde inte sättas samman.');
+  const documents=ordered.flatMap(part=>part.d||[]),voteRows=ordered.flatMap(part=>part.r||[]),positionRows=ordered.flatMap(part=>part.pr||[]),memberRows=ordered.flatMap(part=>part.mr||[]);
   const yieldUi=()=>new Promise(resolve=>requestAnimationFrame(resolve));
   decisionUpdateInitialProgressFinal(45);
   await yieldUi();applyMunicipalProtocolMetadataCorrections(documents,memberRows);
@@ -34,13 +34,14 @@ async function decisionAssembleWorkerPartsFinal(parts){
   decisionUpdateInitialProgressFinal(49);
   await yieldUi();synchronizeMunicipalProtocolTitles(documents);decisionUpdateInitialProgressFinal(49.5);
   await yieldUi();pruneUnmatchedMunicipalAttendanceRows(documents,memberRows);decisionUpdateInitialProgressFinal(50);
+  await yieldUi();repairMunicipalPageBoundaryAttendance(documents,voteRows,memberRows);decisionUpdateInitialProgressFinal(50.2);
   await yieldUi();disambiguateMunicipalProtocolDocumentIds(documents);decisionUpdateInitialProgressFinal(50.4);
   await yieldUi();disambiguateMunicipalDecisionPointIds(documents);decisionUpdateInitialProgressFinal(50.8);
   await yieldUi();repairMunicipalVoteEvents(documents,voteRows);decisionUpdateInitialProgressFinal(51.2);
   await yieldUi();repairMunicipalTruncatedVoteMeanings(documents);decisionUpdateInitialProgressFinal(51.6);
   await yieldUi();markMunicipalVoteCountConflicts(documents,voteRows);decisionUpdateInitialProgressFinal(52);
   await yieldUi();
-  return {...part1,d:documents,r:voteRows,pr:part2.pr||[],mr:memberRows};
+  return {...part1,d:documents,r:voteRows,pr:positionRows,mr:memberRows};
 }
 
 async function decisionLoadWithoutWorkerFinal(){
@@ -67,15 +68,15 @@ async function decisionLoadWithoutWorkerFinal(){
 
 function decisionLoadWithWorkerFinal(worker){
   return new Promise((resolve,reject)=>{
-    const parts={1:{},2:{}};
+    const parts={};
     worker.onmessage=async event=>{
       const message=event.data||{};
       if(message.type==='load-progress'){
         const total=Math.max(0,Number(message.totalBytes)||0),loaded=Math.max(0,Number(message.loadedBytes)||0);
         decisionUpdateInitialProgressFinal(total?Math.min(1,loaded/total)*45:0);
-      }else if(message.type==='meta')Object.assign(parts[message.part],message.value||{});
+      }else if(message.type==='meta'){parts[message.part]=parts[message.part]||{};Object.assign(parts[message.part],message.value||{});}
       else if(message.type==='chunk'){
-        const target=parts[message.part];
+        const target=parts[message.part]=parts[message.part]||{};
         if(!Array.isArray(target[message.key]))target[message.key]=[];
         target[message.key].push(...(message.value||[]));
       }else if(message.type==='error'){
@@ -156,8 +157,9 @@ let decisionInitialLoadCompleteFinal=false;
 let rawInitialLoadCompleteFinal=false;
 let decisionActivityInitialLoadCompleteFinal=false;
 
-const municipalDecisionTableIndexSrcFinal='data/municipal-decision-table-index.ndjson.gz?v=20260805-2';
+const municipalDecisionTableIndexSrcFinal='data/municipal-decision-table-index.ndjson.gz?v=20260806-2';
 const municipalDecisionTableIndexPartsBaseFinal='data/municipal-decision-table-index-parts';
+const municipalDecisionMeetingDetailsSrcFinal='data/municipal-decision-meeting-details.js?v=20260806-2';
 const decisionTableIndexBootstrapFinal=window.municipalDecisionTableBootstrap||{total:0,rows:[]};
 const decisionTableIndexRowsFinal=[...(decisionTableIndexBootstrapFinal.rows||[])];
 const decisionTableIndexBootstrapCountFinal=decisionTableIndexRowsFinal.length;
@@ -209,7 +211,10 @@ async function decisionReadTableIndexStreamFinal(stream){
   const consumeLine=line=>{
     if(!line)return;
     const value=JSON.parse(line);
-    if(value?.type==='meta')decisionTableIndexTotalFinal=Math.max(0,Number(value.total)||0);
+    if(value?.type==='meta'){
+      decisionTableIndexTotalFinal=Math.max(0,Number(value.total)||0);
+      if(value.meetings)decisionRegisterIndexedMeetingDetailsFinal(value.meetings);
+    }
     else if(sourceRowIndex++>=decisionTableIndexBootstrapCountFinal)decisionTableIndexRowsFinal.push(value);
   };
   while(true){
@@ -240,14 +245,18 @@ async function decisionReadTableIndexStreamFinal(stream){
 
 function decisionReadTableIndexFileProgressivelyFinal(){
   return (async()=>{
-    const partCount=Math.max(0,Number(decisionTableIndexBootstrapFinal.partCount)||0),version=decisionTableIndexBootstrapFinal.version||'20260805-2';
+    const partCount=Math.max(0,Number(decisionTableIndexBootstrapFinal.partCount)||0),version=decisionTableIndexBootstrapFinal.version||'20260806-2';
     if(!partCount)throw Error('Tabellindexets lokala delar saknas.');
+    await loadScriptOnce(municipalDecisionMeetingDetailsSrcFinal);
+    const meetingDetails=window.municipalDecisionMeetingDetails||JSON.parse(await decodeHistoricPackText(window.municipalDecisionMeetingDetailsCompressed||''));
+    decisionRegisterIndexedMeetingDetailsFinal(meetingDetails);
+    delete window.municipalDecisionMeetingDetailsCompressed;
     const columns=decisionTableIndexBootstrapFinal.fields||[];
     let sourceRowIndex=0;
     for(let part=1;part<=partCount;part++){
       const partName=String(part).padStart(3,'0');
       await loadScriptOnce(`${municipalDecisionTableIndexPartsBaseFinal}/part-${partName}.js?v=${version}`);
-      const rows=window.municipalDecisionTableIndexParts?.[part]||[];
+      const rows=window.municipalDecisionTableIndexParts?.[part]||JSON.parse(await decodeHistoricPackText(window.municipalDecisionTableIndexCompressedParts?.[part]||''));
       for(let start=0;start<rows.length;start+=64){
         const end=Math.min(rows.length,start+64);
         for(let index=start;index<end;index++){
@@ -258,7 +267,8 @@ function decisionReadTableIndexFileProgressivelyFinal(){
         decisionSignalTableIndexChangeFinal();
         await new Promise(resolve=>requestAnimationFrame(resolve));
       }
-      delete window.municipalDecisionTableIndexParts[part];
+      if(window.municipalDecisionTableIndexParts)delete window.municipalDecisionTableIndexParts[part];
+      if(window.municipalDecisionTableIndexCompressedParts)delete window.municipalDecisionTableIndexCompressedParts[part];
     }
     decisionTableIndexCompleteFinal=true;
     if(!decisionTableIndexTotalFinal)decisionTableIndexTotalFinal=decisionTableIndexRowsFinal.length;
@@ -446,6 +456,17 @@ scheduleTableSearch=function(key,inputId,tableIds,render){
     });
   });
 };
+
+/* A short input debounce must be able to stop an obsolete municipal scan
+   immediately, while leaving the current rows still until its replacement
+   begins. */
+function decisionCancelProgressiveSearchForTypingFinal(){
+  const job=progressiveSearchJobsFinal.get('decision');
+  if(!job)return;
+  job.cancelled=true;
+  if(job.frame)cancelAnimationFrame(job.frame);
+  progressiveSearchJobsFinal.delete('decision');
+}
 
 /* Historical election data: scan the 59,000-row dataset in short slices. */
 const filteredRawRowsBeforeProgressiveFinal=filteredRawRows;
@@ -765,8 +786,8 @@ renderDecisionView=function(){
 };
 
 /* Keep the municipal result table stable while searching and while revealing
-   more rows. Search swaps in one complete result set; infinite loading only
-   appends new rows and never recreates rows that are already clickable. */
+   more rows. Partial search paints and infinite loading append rows without
+   recreating rows that are already clickable. */
 const decisionStableSearchDocumentCacheFinal=new WeakMap();
 const decisionStableSearchScoreCacheFinal=new WeakMap();
 const decisionStableQuickSearchCacheFinal=new WeakMap();
@@ -1355,19 +1376,12 @@ function decisionProgressivePaintRankedFinal(state,complete=false){
   state.paintPending=false;
   if(decisionActiveTabState()?.kind!=='list'||currentTopView()!=='decision')return;
   decisionBindStableListEventsFinal();
-  /* Keep the current result set completely still while a new search or filter
-     is being evaluated. Replacing and re-ranking partial matches on every
-     frame made the table, counters and surrounding layout visibly shake while
-     somebody was typing. The initial load remains progressive; later jobs
-     swap in their complete result set in one paint. */
-  if(!complete&&!state.initialLoad){
-    if(state.sortedRows?.length)state.revealCount=decisionVisibleCount(decisionListTab().page||0,state.sortedRows.length);
-    const visibleCount=$('decisionBody')?.children.length||0;
-    $('decisionPage').textContent=decisionProgressiveStatusFinal(state,false,visibleCount);
-    return;
-  }
   const filteredRows=state.filteredMatches;
-  const rows=complete?state.sortedRows:state.previewRows;
+  /* Search results arrive in discovery order while the scan is running. That
+     makes every partial paint a stable prefix: existing rows stay put and new
+     rows are appended. Relevance order is applied once, without motion, when
+     the scan is complete. Initial loading keeps its ranked preview. */
+  const rows=complete?state.sortedRows:state.initialLoad?state.previewRows:state.filteredMatches;
   const targetCount=decisionVisibleCount(decisionListTab().page||0,rows.length);
   state.revealCount=complete?targetCount:Math.min(targetCount,(state.revealCount||0)+progressiveVisibleRowsPerPaintFinal.decision);
   const visibleCount=Math.min(targetCount,state.revealCount);
@@ -1378,7 +1392,7 @@ function decisionProgressivePaintRankedFinal(state,complete=false){
     if(wrap)wrap.scrollTop=0;
     renderDecisionTabs();
   }
-  decisionProgressiveReconcileRowsFinal(rows.slice(0,visibleCount),state.hasPainted&&!state.initialLoad);
+  decisionProgressiveReconcileRowsFinal(rows.slice(0,visibleCount),false);
   state.hasPainted=true;
   decisionStableListRenderFinal={key:decisionStableListKeyFinal(),filteredRows,rows,rendered:visibleCount};
   progressiveOverviewCardsFinal('decisionOverview',decisionSummaryEntriesFinal(state.summary),!complete);
@@ -1617,25 +1631,148 @@ function decisionStableRowHtmlFinal(row){
   return `<tr class="${decisionPointRowClass(row)}" data-id="${esc(row.id)}" data-proposal-key="${esc(decisionProposalKey(row))}" tabindex="0" role="button" aria-label="Öppna ärendet ${esc(label)}"><td>${esc(row.date)}</td><td>${esc(row.body||'')}</td><td>${municipalCaseCellHtml(row)}</td><td>${decisionPointResultHtml(row)}</td><td class="num">${fmtInt(row.voteRoundCount)}</td><td class="num">${fmtInt(row.voteCount)}</td><td class="num">${fmtInt(row.yes)}</td><td class="num">${fmtInt(row.no)}</td><td class="num">${fmtInt(row.abstain)}</td><td class="num">${fmtInt(row.absent)}</td><td>${decisionStableSourceLinkFinal(source)}</td></tr>`;
 }
 
-function decisionIndexedRowForElementFinal(element){
-  const key=element?.dataset.proposalKey||'';
+const decisionIndexedDetailRowsFinal=new Map();
+const decisionIndexedDetailPartPromisesFinal=new Map();
+const decisionIndexedMeetingDetailsFinal=new Map();
+let decisionCanonicalWarmupTimerFinal=0;
+
+function decisionRegisterIndexedMeetingDetailsFinal(meetings){
+  Object.entries(meetings||{}).forEach(([key,value])=>{
+    if(!value?.row||!value?.detail)return;
+    decisionIndexedMeetingDetailsFinal.set(key,value);
+    decisionIndexedDetailRowsFinal.set(key,{...value.row,fastDetail:value.detail});
+  });
+}
+
+decisionRegisterIndexedMeetingDetailsFinal(decisionTableIndexBootstrapFinal.meetings);
+
+function decisionRegisterIndexedDetailRowFinal(row){
+  if(!row)return null;
+  const key=decisionProposalKey(row);
+  if(key)decisionIndexedDetailRowsFinal.set(key,row);
+  return row;
+}
+
+function decisionIndexedDetailRowByKeyFinal(key){
+  const text=String(key||'');
+  if(!text)return null;
   const stateRows=decisionProgressiveSearchStateFinal?.filteredMatches||[];
-  return stateRows.find(row=>decisionProposalKey(row)===key)||decisionTableIndexRowsFinal.find(row=>decisionProposalKey(row)===key)||null;
+  return decisionIndexedDetailRowsFinal.get(text)||stateRows.find(row=>decisionProposalKey(row)===text)||decisionTableIndexRowsFinal.find(row=>decisionProposalKey(row)===text)||null;
+}
+
+async function decisionLoadIndexedDetailPartFinal(part,proposalKey){
+  const current=decisionIndexedDetailRowByKeyFinal(proposalKey);
+  if(current)return decisionRegisterIndexedDetailRowFinal(current);
+  const partNumber=Math.max(0,Number(part)||0);
+  if(!partNumber)return null;
+  if(!decisionIndexedDetailPartPromisesFinal.has(partNumber)){
+    decisionIndexedDetailPartPromisesFinal.set(partNumber,(async()=>{
+      const partName=String(partNumber).padStart(3,'0');
+      const version=decisionTableIndexBootstrapFinal.version||'20260806-2';
+      await loadScriptOnce(`${municipalDecisionTableIndexPartsBaseFinal}/part-${partName}.js?v=${version}`);
+      const columns=decisionTableIndexBootstrapFinal.fields||[];
+      const rows=window.municipalDecisionTableIndexParts?.[partNumber]||JSON.parse(await decodeHistoricPackText(window.municipalDecisionTableIndexCompressedParts?.[partNumber]||''));
+      for(const source of rows){
+        const row={};
+        for(let columnIndex=0;columnIndex<source.length;columnIndex++)if(source[columnIndex]!==null)row[columns[columnIndex]]=source[columnIndex];
+        decisionRegisterIndexedDetailRowFinal(row);
+      }
+      if(window.municipalDecisionTableIndexCompressedParts)delete window.municipalDecisionTableIndexCompressedParts[partNumber];
+    })().catch(error=>{
+      decisionIndexedDetailPartPromisesFinal.delete(partNumber);
+      throw error;
+    }));
+  }
+  await decisionIndexedDetailPartPromisesFinal.get(partNumber);
+  return decisionIndexedDetailRowByKeyFinal(proposalKey);
+}
+
+function decisionScheduleCanonicalWarmupFinal(){
+  if(decisionCanonicalPreparationReadyFinal()||decisionCanonicalMountPromise||decisionCanonicalWarmupTimerFinal)return;
+  decisionCanonicalWarmupTimerFinal=setTimeout(()=>{
+    decisionCanonicalWarmupTimerFinal=0;
+    const start=()=>ensureDecisionCanonicalDataFinal().catch(()=>{});
+    if(typeof requestIdleCallback==='function')requestIdleCallback(start,{timeout:2500});
+    else setTimeout(start,250);
+  },750);
+}
+
+function decisionIndexedRowForElementFinal(element){
+  const direct=element?.indexedRow||element?._indexedRow;
+  if(direct)return decisionRegisterIndexedDetailRowFinal(direct);
+  return decisionRegisterIndexedDetailRowFinal(decisionIndexedDetailRowByKeyFinal(element?.dataset.proposalKey||''));
+}
+
+function decisionBindIndexedDetailLinksFinal(){
+  const groups=$('decisionDetailGroups');
+  if(!groups)return;
+  groups.querySelectorAll('.decision-text-ref').forEach(button=>{
+    button.onclick=async event=>{
+      event.preventDefault();
+      event.stopPropagation();
+      if(button.getAttribute('aria-busy')==='true')return;
+      button.setAttribute('aria-busy','true');
+      try{
+        const target=decisionIndexedDetailRowByKeyFinal(button.dataset.proposalKey)||await decisionLoadIndexedDetailPartFinal(button.dataset.indexPart,button.dataset.proposalKey);
+        if(target?.fastDetail)decisionOpenIndexedDetailRowFinal(target);
+        else{
+          await ensureDecisionCanonicalDataFinal();
+          openDecisionDetail(button.dataset.id,button.dataset.proposalKey);
+        }
+      }finally{button.removeAttribute('aria-busy');}
+    };
+  });
+}
+
+function decisionRenderIndexedFastDetailFinal(row,tab){
+  const detail=row?.fastDetail;
+  if(!detail)return false;
+  $('decisionDetailTitle').textContent=detail.title||row.protocolHeader||row.pointTitle||row.title||'Kommunalt ärende';
+  $('decisionDetailMeta').innerHTML=`<span>${esc(detail.metaText||'')}</span>${detail.sourceUrl?` <a class="decision-official-link" href="${esc(detail.sourceUrl)}" target="_blank" rel="noopener noreferrer">${esc(detail.sourceLabel||'Öppna källan')}</a>`:''}`;
+  $('decisionDetailOverview').innerHTML=detail.overviewHtml||'';
+  $('decisionDetailStatus').textContent=detail.status||'';
+  const meeting=decisionIndexedMeetingDetailsFinal.get(detail.meetingKey)||null;
+  const attendance=!detail.isMeeting&&meeting?.attendanceHtml?meeting.attendanceHtml:'';
+  $('decisionDetailGroups').innerHTML=(detail.groupsHtml||decisionDetailUnavailableTextFinal())+attendance;
+  $('decisionPage').textContent='';
+  $('decisionPrev').disabled=true;
+  $('decisionNext').disabled=true;
+  if(detail.isMeeting||!meeting?.row)decisionSetDetailMeetingContextFinal(null);
+  else{
+    const meetingRow=decisionRegisterIndexedDetailRowFinal({...meeting.row,fastDetail:meeting.detail});
+    decisionSetDetailMeetingContextFinal(meetingRow,decisionOpenIndexedDetailRowFinal);
+  }
+  decisionBindIndexedDetailLinksFinal();
+  if(typeof decisionDecorateDetailPdfLinksFinal==='function')decisionDecorateDetailPdfLinksFinal();
+  $('decisionMasterPane').hidden=true;
+  $('decisionDetailPane').hidden=false;
+  syncDecisionListDetailChromeFinal();
+  decisionScheduleCanonicalWarmupFinal();
+  return true;
+}
+
+function decisionOpenIndexedDetailRowFinal(row){
+  if(!row)return null;
+  decisionRegisterIndexedDetailRowFinal(row);
+  return decisionShowIndexedDetailFinal({_indexedRow:row,dataset:{id:row.id||'',proposalKey:decisionProposalKey(row)}});
 }
 
 function decisionShowIndexedDetailFinal(element){
   const row=decisionIndexedRowForElementFinal(element)||{},id=element?.dataset.id||row.id||'',proposalKey=element?.dataset.proposalKey||decisionProposalKey(row);
   const title=String(row.protocolHeader||row.pointTitle||row.title||'Kommunalt ärende').replace(/\s+/g,' ').trim();
   const proposalData=row.id?decisionProposalTabData(row):{proposalKey};
+  const hasFastDetail=!!row.fastDetail;
   let tabIndex=decisionTabs.findIndex(tab=>tab.kind==='decision'&&tab.id===id&&String(tab.proposalKey||'')===proposalKey);
   if(tabIndex<0){
-    decisionTabs.push({kind:'decision',id,...proposalData,proposalKey,title,page:0,pendingCanonical:true});
+    decisionTabs.push({kind:'decision',id,...proposalData,proposalKey,title,page:0,pendingCanonical:!hasFastDetail});
     tabIndex=decisionTabs.length-1;
   }else{
-    Object.assign(decisionTabs[tabIndex],proposalData,{title,pendingCanonical:true});
+    Object.assign(decisionTabs[tabIndex],proposalData,{title,pendingCanonical:!hasFastDetail});
   }
   decisionActiveTab=tabIndex;
   renderDecisionTabs();
+  if(decisionRenderIndexedFastDetailFinal(row,decisionTabs[tabIndex]))return decisionTabs[tabIndex];
+  decisionSetDetailMeetingContextFinal(null);
   $('decisionDetailTitle').textContent=title;
   const source=decisionAnchoredSourceUrl(row);
   $('decisionDetailMeta').innerHTML=`<span>${esc([row.body,row.date,row.diary].filter(Boolean).join(' · '))}</span>${source?` <a class="decision-official-link" href="${esc(source)}" target="_blank" rel="noopener noreferrer">Öppna källan</a>`:''}`;
@@ -1659,6 +1796,11 @@ function decisionOpenStableRowFinal(element){
   if(!element)return;
   if(decisionCanonicalPreparationReadyFinal()){
     openDecisionDetail(element.dataset.id,element.dataset.proposalKey);
+    return;
+  }
+  const indexedRow=decisionIndexedRowForElementFinal(element);
+  if(indexedRow?.fastDetail){
+    decisionOpenIndexedDetailRowFinal(indexedRow);
     return;
   }
   const proposalKey=element.dataset.proposalKey;

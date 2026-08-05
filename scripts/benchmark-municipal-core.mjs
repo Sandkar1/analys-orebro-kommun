@@ -36,8 +36,7 @@ vm.runInContext(`
 `, context);
 
 for (const relative of [
-  'data/municipal-protocol-data-orebro-v2.part1.js',
-  'data/municipal-protocol-data-orebro-v2.part2.js',
+  'data/municipal-protocol-data-orebro-v2.js',
   'data/municipal-protocol-diary-data.js',
   'js/app-core.js',
   'js/municipal-protocols-tab.js',

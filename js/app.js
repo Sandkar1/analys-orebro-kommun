@@ -1,7 +1,22 @@
 ﻿let confirmResolver=null,confirmKeyHandler=null,confirmLastFocus=null;
 function closeConfirm(result){const overlay=$('confirmOverlay');if(confirmKeyHandler){document.removeEventListener('keydown',confirmKeyHandler);confirmKeyHandler=null;}overlay.hidden=true;document.body.style.overflow='';if(confirmLastFocus&&typeof confirmLastFocus.focus==='function')confirmLastFocus.focus();const resolve=confirmResolver;confirmResolver=null;confirmLastFocus=null;if(resolve)resolve(result);}
 function openResetConfirm(){if(confirmResolver)return Promise.resolve(false);const overlay=$('confirmOverlay');const accept=$('confirmAccept');const cancel=$('confirmCancel');confirmLastFocus=document.activeElement;overlay.hidden=false;document.body.style.overflow='hidden';return new Promise(resolve=>{confirmResolver=resolve;confirmKeyHandler=e=>{if(e.key==='Escape'){e.preventDefault();closeConfirm(false);}};document.addEventListener('keydown',confirmKeyHandler);accept.focus();});}
-let sessionResolver=null,sessionKeyHandler=null,sessionLastFocus=null,decisionViewMounted=false,decisionViewMountPromise=null,decisionViewMountScheduled=false,decisionCanonicalMountPromise=null;
+let sessionResolver=null,sessionKeyHandler=null,sessionLastFocus=null,decisionViewMounted=false,decisionViewMountPromise=null,decisionViewMountScheduled=false,decisionCanonicalMountPromise=null,decisionSearchInputTimer=null;
+const decisionSearchReloadStorageKey='municipal-decision-search-reload-v1';
+function persistDecisionSearchForReload(value){
+  try{
+    window.sessionStorage?.setItem(decisionSearchReloadStorageKey,JSON.stringify({path:`${location.pathname}${location.search}`,hash:location.hash,value:String(value||'')}));
+  }catch{}
+}
+function restoreDecisionSearchAfterReload(){
+  try{
+    const record=JSON.parse(window.sessionStorage?.getItem(decisionSearchReloadStorageKey)||'null');
+    if(!record||record.path!==`${location.pathname}${location.search}`||record.hash!==location.hash)return false;
+    decisionSearchQuery=String(record.value||'');
+    syncDecisionSearchControl();
+    return true;
+  }catch{return false;}
+}
 function closeSessionDialog(result){const overlay=$('sessionOverlay');if(sessionKeyHandler){document.removeEventListener('keydown',sessionKeyHandler);sessionKeyHandler=null;}overlay.hidden=true;document.body.style.overflow='';if(sessionLastFocus&&typeof sessionLastFocus.focus==='function')sessionLastFocus.focus();const resolve=sessionResolver;sessionResolver=null;sessionLastFocus=null;if(resolve)resolve(result);}
 function setSessionMessage(message){$('sessionMessage').textContent=message;}
 function selectEntireSessionField(){const field=$('sessionField');field.focus();field.setSelectionRange(0,field.value.length);}
@@ -112,7 +127,7 @@ rawFilterIds.forEach(id=>{$(id).onchange=()=>handleRawFilterChange(id);});decisi
 bindMunicipalDocumentsTabControls();
 $('decisionDateToggle').onclick=e=>{e.stopPropagation();toggleDecisionDatePicker();};
 document.addEventListener('click',e=>{if(decisionDatePickerOpen&&!e.target.closest('#decisionView .date-range'))closeDecisionDatePicker();});
-$('decisionDecisionSearch').oninput=()=>{decisionSearchQuery=$('decisionDecisionSearch')?.value||'';decisionActiveTab=0;resetDecisionPage();scheduleTableSearch('decision','decisionDecisionSearch',['decisionBody'],()=>renderDecisionView());};if($('decisionDecisionClear'))$('decisionDecisionClear').onclick=()=>{decisionSearchQuery='';decisionActiveTab=0;resetDecisionPage();renderDecisionView();};
+$('decisionDecisionSearch').oninput=()=>{decisionSearchQuery=$('decisionDecisionSearch')?.value||'';persistDecisionSearchForReload(decisionSearchQuery);decisionActiveTab=0;resetDecisionPage();if(typeof decisionCancelProgressiveSearchForTypingFinal==='function')decisionCancelProgressiveSearchForTypingFinal();clearTimeout(decisionSearchInputTimer);decisionSearchInputTimer=setTimeout(()=>{decisionSearchInputTimer=null;scheduleTableSearch('decision','decisionDecisionSearch',['decisionBody'],()=>renderDecisionView());},100);};if($('decisionDecisionClear'))$('decisionDecisionClear').onclick=()=>{clearTimeout(decisionSearchInputTimer);decisionSearchInputTimer=null;decisionSearchQuery='';persistDecisionSearchForReload('');decisionActiveTab=0;resetDecisionPage();scheduleTableSearch('decision','decisionDecisionSearch',['decisionBody'],()=>renderDecisionView());};
 $('rawSearch').oninput=()=>{resetRawPage();scheduleTableSearch('raw','rawSearch',['rawEligibleBody','rawIneligibleBody'],()=>renderRawTable());};
 document.querySelector('.grid').addEventListener('input',()=>{readInputs(true);markDirtyUi();syncMethodFields();showNotice('Ändringar väntar. Tryck Beräkna mandat för att uppdatera resultatet.');});document.querySelector('.grid').addEventListener('change',()=>{readInputs(true);markDirtyUi();syncMethodFields();showNotice('Ändringar väntar. Tryck Beräkna mandat för att uppdatera resultatet.');});
 document.addEventListener('input',()=>scheduleUrlHashUpdate(),true);
@@ -121,13 +136,20 @@ document.addEventListener('click',()=>setTimeout(()=>scheduleUrlHashUpdate(),0),
 document.addEventListener('scroll',()=>scheduleUrlHashUpdate(800),true);
 window.addEventListener('hashchange',async()=>{if(urlHashApplying)return;const value=urlHashSessionValue();if(!value||value===urlHashLast)return;await applyUrlHashSession();});
 async function initAppFromUrlHash(){
+  /* The compressed URL state can take noticeable time to decode. Restore the
+     small reload-only search snapshot first so the field is already populated
+     on the first paint, then reapply it after URL state has finished. */
+  const immediateSearch=restoreDecisionSearchAfterReload();
   const restored=await applyUrlHashSession();
+  const restoredSearch=restoreDecisionSearchAfterReload()||immediateSearch;
   if(!restored){
     tabs=[makeTab(initialState,'Beräkning 1')];
     activeTab=0;
     renderAll();
     renderRawDraft();
     scheduleUrlHashUpdate(0);
+  }else if(restoredSearch&&currentTopView()==='decision'){
+    renderDecisionView();
   }
   // Municipal datasets are loaded on demand after their table shell has painted.
 }

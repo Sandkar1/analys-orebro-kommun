@@ -54,8 +54,7 @@ vm.runInContext(`
   function fuzzySearchTextMatches(text,query){return String(text).includes(String(query))}
 `, context);
 for (const relative of [
-  'data/municipal-protocol-data-orebro-v2.part1.js',
-  'data/municipal-protocol-data-orebro-v2.part2.js',
+  'data/municipal-protocol-data-orebro-v2.js',
   'data/municipal-protocol-diary-data.js',
   'js/app-core.js',
   'js/municipal-protocols-tab.js',
@@ -279,10 +278,25 @@ for (let index = 0; index < pack.pr.length; index += 6) {
 }
 
 const protocolAttendanceKeys = new Set(pack.d.map(document => `${document.dt}|${document.b}|${document.doc}`));
+const attendanceIdentity=value=>String(value||'').normalize('NFD').replace(/\p{M}/gu,'').toLocaleLowerCase('sv').replace(/[^a-z0-9åäö]+/giu,' ').trim();
+const attendanceByProtocol=new Map();
 for (let index = 0; index < pack.mr.length; index += 6) {
   const key = `${pack.mr[index]}|${pack.mr[index + 1]}|${pack.mr[index + 2]}`;
   if (!protocolAttendanceKeys.has(key)) addIssue('attendance_row_unmatched_protocol', { index: index / 6, key });
+  if(!attendanceByProtocol.has(key))attendanceByProtocol.set(key,new Set());
+  attendanceByProtocol.get(key).add(`${attendanceIdentity(pack.mr[index+3])}|${attendanceIdentity(pack.mr[index+4])}`);
 }
+for(let index=0;index<pack.r.length;index+=6){
+  const document=pack.d[Number(pack.r[index])],vote=String(pack.r[index+4]||'');
+  if(!document||vote==='Frånvarande')continue;
+  const key=`${document.dt}|${document.b}|${document.doc}`,identity=`${attendanceIdentity(pack.r[index+2])}|${attendanceIdentity(pack.r[index+3])}`;
+  if(!attendanceByProtocol.get(key)?.has(identity))addIssue('named_voter_missing_from_attendance',{docIndex:Number(pack.r[index]),point:String(pack.r[index+1]||''),name:String(pack.r[index+2]||''),party:String(pack.r[index+3]||''),key});
+}
+const may14AttendanceKey='2024-05-14|Kommunfullmäktige|2024-05-14 Kommunfullmäktige.pdf';
+const may14Rows=[];
+for(let index=0;index<pack.mr.length;index+=6)if(`${pack.mr[index]}|${pack.mr[index+1]}|${pack.mr[index+2]}`===may14AttendanceKey)may14Rows.push({name:String(pack.mr[index+3]||''),party:String(pack.mr[index+4]||''),role:String(pack.mr[index+5]||'')});
+if(may14Rows.length!==82)addIssue('page_boundary_attendance_regression',{key:may14AttendanceKey,expected:82,actual:may14Rows.length});
+if(may14Rows.some(row=>row.name==='Muhammed'))addIssue('page_boundary_attendance_fragment',{key:may14AttendanceKey,name:'Muhammed'});
 
 let meetingRows = 0;
 for (const row of runtimeRows) {
