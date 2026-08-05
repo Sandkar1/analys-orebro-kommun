@@ -3,6 +3,13 @@ const progressiveSearchJobsFinal=new Map();
 const progressiveSearchHandlersFinal=new Map();
 const scheduleTableSearchBeforeProgressiveFinal=scheduleTableSearch;
 
+const municipalDataWorkerSrcFinal='js/municipal-data-loader-worker.js?v=20260805-2';
+function progressiveCreateDataWorkerFinal(){
+  if(typeof Worker!=='function'||window.location.protocol==='file:')return null;
+  try{return new Worker(municipalDataWorkerSrcFinal);}
+  catch(_error){return null;}
+}
+
 let decisionPackWorkerPromiseFinal=null;
 async function decisionAssembleWorkerPartsFinal(parts){
   const part1=parts[1],part2=parts[2];
@@ -28,12 +35,22 @@ async function decisionAssembleWorkerPartsFinal(parts){
   return {...part1,d:documents,r:voteRows,pr:part2.pr||[],mr:memberRows};
 }
 
-ensureDecisionPackLoaded=async function(){
-  if(!municipalWorkEnabled)throw Error('Kommunvyn är avstängd.');
-  if(decisionPack?.d?.length)return decisionPack;
-  if(decisionPackWorkerPromiseFinal)return decisionPackWorkerPromiseFinal;
-  decisionPackWorkerPromiseFinal=new Promise((resolve,reject)=>{
-    const worker=new Worker('js/municipal-data-loader-worker.js?v=20260805-2'),parts={1:{},2:{}};
+async function decisionLoadWithoutWorkerFinal(){
+  if(window.municipalProtocolPack?.d?.length){
+    decisionPack=window.municipalProtocolPack;
+    return decisionPack;
+  }
+  let parts=window.municipalProtocolPackParts||{};
+  await Promise.all(municipalProtocolPackSrcs.map((src,index)=>parts[index+1]?Promise.resolve():loadScriptOnce(src)));
+  parts=window.municipalProtocolPackParts||{};
+  const assembled=await decisionAssembleWorkerPartsFinal(parts);
+  decisionPack=window.municipalProtocolPack=assembled;
+  return assembled;
+}
+
+function decisionLoadWithWorkerFinal(worker){
+  return new Promise((resolve,reject)=>{
+    const parts={1:{},2:{}};
     worker.onmessage=async event=>{
       const message=event.data||{};
       if(message.type==='meta')Object.assign(parts[message.part],message.value||{});
@@ -56,7 +73,21 @@ ensureDecisionPackLoaded=async function(){
     worker.postMessage({
       sources:municipalProtocolPackSrcs.map(src=>new URL(src,window.location.href).href)
     });
-  }).finally(()=>{decisionPackWorkerPromiseFinal=null;});
+  });
+}
+
+ensureDecisionPackLoaded=async function(){
+  if(!municipalWorkEnabled)throw Error('Kommunvyn är avstängd.');
+  if(decisionPack?.d?.length)return decisionPack;
+  if(decisionPackWorkerPromiseFinal)return decisionPackWorkerPromiseFinal;
+  decisionPackWorkerPromiseFinal=(async()=>{
+    const worker=progressiveCreateDataWorkerFinal();
+    if(worker){
+      try{return await decisionLoadWithWorkerFinal(worker);}
+      catch(_error){/* A blocked worker is expected for some local/CSP deployments. */}
+    }
+    return decisionLoadWithoutWorkerFinal();
+  })().finally(()=>{decisionPackWorkerPromiseFinal=null;});
   return decisionPackWorkerPromiseFinal;
 };
 
@@ -1476,9 +1507,8 @@ setRawPageSize=function(size){
 /* Decode and materialize historical rows cooperatively. Only the table is
    updated while the dataset is being restored; the rest of the view remains
    fully interactive. */
-function rawLoadHistoricWorkerFinal(){
+function rawLoadHistoricWorkerFinal(worker){
   return new Promise((resolve,reject)=>{
-    const worker=new Worker('js/municipal-data-loader-worker.js?v=20260805-2');
     let state=null,filters=null,query='',filterAccumulator=null,lastPaint=performance.now();
     worker.onmessage=event=>{
       const message=event.data||{};
@@ -1522,9 +1552,12 @@ ensureRawData=async function(){
   if(rawDataPromise)return rawDataPromise;
   rawDataPromise=(async()=>{
     try{
-      if(typeof Worker==='function'){
-        await rawLoadHistoricWorkerFinal();
-        return;
+      const worker=progressiveCreateDataWorkerFinal();
+      if(worker){
+        try{
+          await rawLoadHistoricWorkerFinal(worker);
+          return;
+        }catch(_error){/* Continue with the cooperative local loader. */}
       }
       let packed=historicPack;
       if(typeof packed==='string'){
