@@ -56,7 +56,7 @@ async function decisionLoadWithoutWorkerFinal(){
     if(parts[index+1])return Promise.resolve();
     return loadScriptOnce(src).then(()=>{
       loadedBytes+=municipalProtocolPackByteSizesFinal[index]||0;
-      decisionUpdateInitialProgressFinal(8+(totalBytes?loadedBytes/totalBytes*37:37));
+      decisionUpdateInitialProgressFinal(totalBytes?loadedBytes/totalBytes*45:45);
     });
   }));
   parts=window.municipalProtocolPackParts||{};
@@ -72,7 +72,7 @@ function decisionLoadWithWorkerFinal(worker){
       const message=event.data||{};
       if(message.type==='load-progress'){
         const total=Math.max(0,Number(message.totalBytes)||0),loaded=Math.max(0,Number(message.loadedBytes)||0);
-        decisionUpdateInitialProgressFinal(8+(total?Math.min(1,loaded/total)*37:0));
+        decisionUpdateInitialProgressFinal(total?Math.min(1,loaded/total)*45:0);
       }else if(message.type==='meta')Object.assign(parts[message.part],message.value||{});
       else if(message.type==='chunk'){
         const target=parts[message.part];
@@ -102,7 +102,6 @@ ensureDecisionPackLoaded=async function(){
   if(decisionPack?.d?.length)return decisionPack;
   if(decisionPackWorkerPromiseFinal)return decisionPackWorkerPromiseFinal;
   decisionPackWorkerPromiseFinal=(async()=>{
-    decisionUpdateInitialProgressFinal(8);
     const worker=progressiveCreateDataWorkerFinal();
     if(worker){
       try{return await decisionLoadWithWorkerFinal(worker);}
@@ -124,6 +123,10 @@ function progressiveSearchFrameFinal(job){
   return new Promise(resolve=>setTimeout(()=>resolve(!job.cancelled),0));
 }
 
+function progressiveVisualFrameFinal(job){
+  return new Promise(resolve=>requestAnimationFrame(()=>resolve(!job.cancelled)));
+}
+
 function progressiveInputPendingFinal(){
   try{return !!navigator.scheduling?.isInputPending?.({includeContinuous:true});}
   catch(_error){return false;}
@@ -133,11 +136,16 @@ function progressiveSliceExpiredFinal(started,budget=5){
   return performance.now()-started>=budget||progressiveInputPendingFinal();
 }
 
+/* Each source record has the same traversal weight. The per-frame caps keep
+   progress visually even while still yielding immediately for user input. */
+const progressiveRecordsPerFrameFinal={raw:256,decision:96,activity:12};
+const progressiveVisibleRowsPerPaintFinal={raw:12,decision:8,activity:8};
+
 function progressiveResultStatusFinal({active=false,matches=0,visible=0,index=0,total=0,selected=null,percentOverride=null,progressLabel='genomsökt'}={}){
   const matchCount=Math.max(0,Number(matches)||0),visibleCount=Math.max(0,Number(visible)||0);
   if(active){
     const calculated=total?Math.max(0,Number(index)||0)/total*100:0;
-    const percent=Math.min(100,Math.floor(percentOverride===null?calculated:Math.max(0,Number(percentOverride)||0)));
+    const percent=Math.min(99,Math.floor(percentOverride===null?calculated:Math.max(0,Number(percentOverride)||0)));
     return `Visar ${fmtInt(visibleCount)} · ${percent} % ${progressLabel}`;
   }
   return `Visar ${fmtInt(matchCount?visibleCount:0)}`;
@@ -148,18 +156,141 @@ let decisionInitialLoadCompleteFinal=false;
 let rawInitialLoadCompleteFinal=false;
 let decisionActivityInitialLoadCompleteFinal=false;
 
+const municipalDecisionTableIndexSrcFinal='data/municipal-decision-table-index.ndjson.gz?v=20260805-2';
+const municipalDecisionTableIndexPartsBaseFinal='data/municipal-decision-table-index-parts';
+const decisionTableIndexBootstrapFinal=window.municipalDecisionTableBootstrap||{total:0,rows:[]};
+const decisionTableIndexRowsFinal=[...(decisionTableIndexBootstrapFinal.rows||[])];
+const decisionTableIndexBootstrapCountFinal=decisionTableIndexRowsFinal.length;
+const decisionTableIndexWaitersFinal=new Set();
+let decisionTableIndexPromiseFinal=null;
+let decisionTableIndexStartedFinal=false;
+let decisionTableIndexCompleteFinal=false;
+let decisionTableIndexErrorFinal=null;
+let decisionTableIndexTotalFinal=Math.max(0,Number(decisionTableIndexBootstrapFinal.total)||0);
+let decisionTableIndexRevisionFinal=0;
+let decisionCanonicalDetailsRequestedFinal=false;
+
+function decisionSignalTableIndexChangeFinal(){
+  decisionTableIndexRevisionFinal++;
+  const waiters=[...decisionTableIndexWaitersFinal];
+  decisionTableIndexWaitersFinal.clear();
+  for(const resolve of waiters)resolve();
+}
+
+function decisionAwaitTableIndexChangeFinal(revision){
+  if(revision!==decisionTableIndexRevisionFinal)return Promise.resolve();
+  return new Promise(resolve=>decisionTableIndexWaitersFinal.add(resolve));
+}
+
+function decisionRequestCanonicalDetailsFinal(){
+  decisionCanonicalDetailsRequestedFinal=true;
+  decisionSignalTableIndexChangeFinal();
+}
+
+function decisionWaitForTableIndexRowsFinal(count=250,timeout=1200){
+  if(decisionTableIndexRowsFinal.length>=count||decisionTableIndexCompleteFinal||decisionCanonicalDetailsRequestedFinal)return Promise.resolve();
+  return new Promise(resolve=>{
+    let settled=false;
+    const finish=()=>{if(settled)return;settled=true;clearTimeout(timer);decisionTableIndexWaitersFinal.delete(check);resolve();};
+    const check=()=>{
+      if(decisionTableIndexRowsFinal.length>=count||decisionTableIndexCompleteFinal||decisionCanonicalDetailsRequestedFinal)finish();
+      else decisionTableIndexWaitersFinal.add(check);
+    };
+    const timer=setTimeout(finish,timeout);
+    decisionTableIndexWaitersFinal.add(check);
+  });
+}
+
+async function decisionReadTableIndexStreamFinal(stream){
+  if(typeof DecompressionStream!=='function')throw Error('Webbläsaren saknar stöd för strömmad dekomprimering.');
+  const reader=stream.pipeThrough(new DecompressionStream('gzip')).getReader();
+  const decoder=new TextDecoder();
+  let buffer='',parsedSinceYield=0,sourceRowIndex=0,started=performance.now();
+  const consumeLine=line=>{
+    if(!line)return;
+    const value=JSON.parse(line);
+    if(value?.type==='meta')decisionTableIndexTotalFinal=Math.max(0,Number(value.total)||0);
+    else if(sourceRowIndex++>=decisionTableIndexBootstrapCountFinal)decisionTableIndexRowsFinal.push(value);
+  };
+  while(true){
+    const {value,done}=await reader.read();
+    buffer+=decoder.decode(value||new Uint8Array(),{stream:!done});
+    let newline=buffer.indexOf('\n');
+    while(newline>=0){
+      consumeLine(buffer.slice(0,newline));
+      buffer=buffer.slice(newline+1);
+      parsedSinceYield++;
+      if(parsedSinceYield===1||parsedSinceYield>=8){
+        decisionSignalTableIndexChangeFinal();
+        parsedSinceYield=0;
+      }
+      if(performance.now()-started>=4||progressiveInputPendingFinal()){
+        await new Promise(resolve=>requestAnimationFrame(resolve));
+        started=performance.now();
+      }
+      newline=buffer.indexOf('\n');
+    }
+    if(done)break;
+  }
+  consumeLine(buffer.trim());
+  decisionTableIndexCompleteFinal=true;
+  if(!decisionTableIndexTotalFinal)decisionTableIndexTotalFinal=decisionTableIndexRowsFinal.length;
+  decisionSignalTableIndexChangeFinal();
+}
+
+function decisionReadTableIndexFileProgressivelyFinal(){
+  return (async()=>{
+    const partCount=Math.max(0,Number(decisionTableIndexBootstrapFinal.partCount)||0),version=decisionTableIndexBootstrapFinal.version||'20260805-2';
+    if(!partCount)throw Error('Tabellindexets lokala delar saknas.');
+    const columns=decisionTableIndexBootstrapFinal.fields||[];
+    let sourceRowIndex=0;
+    for(let part=1;part<=partCount;part++){
+      const partName=String(part).padStart(3,'0');
+      await loadScriptOnce(`${municipalDecisionTableIndexPartsBaseFinal}/part-${partName}.js?v=${version}`);
+      const rows=window.municipalDecisionTableIndexParts?.[part]||[];
+      for(let start=0;start<rows.length;start+=64){
+        const end=Math.min(rows.length,start+64);
+        for(let index=start;index<end;index++){
+          const source=rows[index],row={};
+          for(let columnIndex=0;columnIndex<source.length;columnIndex++)if(source[columnIndex]!==null)row[columns[columnIndex]]=source[columnIndex];
+          if(sourceRowIndex++>=decisionTableIndexBootstrapCountFinal)decisionTableIndexRowsFinal.push(row);
+        }
+        decisionSignalTableIndexChangeFinal();
+        await new Promise(resolve=>requestAnimationFrame(resolve));
+      }
+      delete window.municipalDecisionTableIndexParts[part];
+    }
+    decisionTableIndexCompleteFinal=true;
+    if(!decisionTableIndexTotalFinal)decisionTableIndexTotalFinal=decisionTableIndexRowsFinal.length;
+    decisionSignalTableIndexChangeFinal();
+  })();
+}
+
+function decisionStartTableIndexLoadFinal(){
+  if(decisionTableIndexPromiseFinal)return decisionTableIndexPromiseFinal;
+  decisionTableIndexStartedFinal=true;
+  decisionTableIndexPromiseFinal=(async()=>{
+    if(window.location.protocol==='file:')await decisionReadTableIndexFileProgressivelyFinal();
+    else{
+      const response=await fetch(municipalDecisionTableIndexSrcFinal);
+      if(!response.ok)throw Error(`Tabellindex kunde inte läsas in (${response.status}).`);
+      const stream=response.body;
+      if(!stream)throw Error('Tabellindex saknar en läsbar dataström.');
+      await decisionReadTableIndexStreamFinal(stream);
+    }
+    return true;
+  })().catch(error=>{
+    decisionTableIndexErrorFinal=error;
+    decisionTableIndexCompleteFinal=true;
+    decisionSignalTableIndexChangeFinal();
+    return false;
+  });
+  return decisionTableIndexPromiseFinal;
+}
+
 function decisionUpdateInitialProgressFinal(percent,{matches=null,visible=null}={}){
   if(decisionInitialLoadCompleteFinal)return;
   decisionInitialProgressPercentFinal=Math.max(decisionInitialProgressPercentFinal,Math.min(99,Math.max(0,Number(percent)||0)));
-  if(currentTopView()!=='decision'||decisionActiveTabState()?.kind==='decision')return;
-  const body=$('decisionBody'),visibleCount=visible===null?(body?.children.length||0):visible;
-  $('decisionPage').textContent=progressiveResultStatusFinal({
-    active:true,
-    matches:matches===null?visibleCount:matches,
-    visible:visibleCount,
-    percentOverride:decisionInitialProgressPercentFinal,
-    progressLabel:'inläst'
-  });
 }
 
 function progressiveOverviewCardsFinal(id,entries,active=false){
@@ -381,8 +512,17 @@ function rawProgressivePaintFinal(state,complete=false){
   if(rawProgressivePointerDownFinal){state.paintPending=true;state.complete=complete;return;}
   state.visibleRows=state.matches;
   if(!complete){
-    state.revealEligible=state.previewEligible.length;
-    state.revealIneligible=state.previewIneligible.length;
+    const eligibleTarget=state.previewEligible.length,ineligibleTarget=state.previewIneligible.length;
+    state.revealEligible=Math.min(state.revealEligible,eligibleTarget);
+    state.revealIneligible=Math.min(state.revealIneligible,ineligibleTarget);
+    let budget=progressiveVisibleRowsPerPaintFinal.raw;
+    if(state.revealEligible<eligibleTarget&&state.revealIneligible<ineligibleTarget){
+      const eligibleBudget=Math.ceil(budget/2),ineligibleBudget=budget-eligibleBudget;
+      const eligibleAdded=Math.min(eligibleBudget,eligibleTarget-state.revealEligible),ineligibleAdded=Math.min(ineligibleBudget,ineligibleTarget-state.revealIneligible);
+      state.revealEligible+=eligibleAdded;state.revealIneligible+=ineligibleAdded;budget-=eligibleAdded+ineligibleAdded;
+    }
+    if(budget&&state.revealEligible<eligibleTarget){const added=Math.min(budget,eligibleTarget-state.revealEligible);state.revealEligible+=added;budget-=added;}
+    if(budget&&state.revealIneligible<ineligibleTarget)state.revealIneligible+=Math.min(budget,ineligibleTarget-state.revealIneligible);
   }
   rawStableRenderRowsFinal(complete?state.sortedRows:state.previewEligible.slice(0,state.revealEligible),complete?null:state.previewIneligible.slice(0,state.revealIneligible),{complete,state});
   if(complete)return;
@@ -423,8 +563,11 @@ async function rawFinalizeProgressiveStateFinal(state,job){
   if(job.cancelled||!state.finalPresentation)return false;
   state.previewEligible=state.finalPresentation.eligible.slice(0,rawVisibleCount(rawEligiblePage,state.finalPresentation.eligible.length));
   state.previewIneligible=state.finalPresentation.ineligible.slice(0,rawVisibleCount(rawIneligiblePage,state.finalPresentation.ineligible.length));
-  state.revealEligible=state.previewEligible.length;
-  state.revealIneligible=state.previewIneligible.length;
+  while(rawProgressiveSearchStateFinal===state&&!job.cancelled&&(state.revealEligible<state.previewEligible.length||state.revealIneligible<state.previewIneligible.length)){
+    rawProgressivePaintFinal(state,false);
+    if(!await progressiveVisualFrameFinal(job))return false;
+  }
+  if(rawProgressiveSearchStateFinal!==state||job.cancelled)return false;
   if(state.initialLoad)rawInitialLoadCompleteFinal=true;
   rawProgressivePaintFinal(state,true);
   return true;
@@ -445,9 +588,10 @@ progressiveSearchHandlersFinal.set('raw',async job=>{
   rawProgressivePaintFinal(state);
   let lastPaint=performance.now(),lastPaintCount=0;
   while(state.index<state.total&&!job.cancelled){
-    const sliceStarted=performance.now();
+    const sliceStarted=performance.now();let traversed=0;
     do{
       const row=rawRows[state.index++];
+      traversed++;
       if(filterAccumulator)rawCollectFilterOptionFinal(filterAccumulator,row);
       if(rawProgressivePredicateFinal(row,filters,query)){
         state.matches.push(row);
@@ -455,16 +599,16 @@ progressiveSearchHandlersFinal.set('raw',async job=>{
         const preview=isRawInvalidVoteRow(row)?state.previewIneligible:state.previewEligible;
         progressiveInsertRankedFinal(preview,row,rawProgressiveCompareFinal,rawPageSize());
       }
-    }while(state.index<state.total&&!progressiveSliceExpiredFinal(sliceStarted,5));
+    }while(state.index<state.total&&traversed<progressiveRecordsPerFrameFinal.raw&&!progressiveSliceExpiredFinal(sliceStarted,4));
     const now=performance.now();
-    if(state.matches.length!==lastPaintCount&&(!state.hasPainted||now-lastPaint>=110)){
+    if(state.matches.length!==lastPaintCount&&(!state.hasPainted||now-lastPaint>=48||state.index===state.total)){
       rawProgressivePaintFinal(state);
       lastPaint=now;
       lastPaintCount=state.matches.length;
     }else{
       $('rawCount').textContent=progressiveResultStatusFinal({active:true,matches:state.matches.length,visible:state.revealEligible+state.revealIneligible,index:state.index,total:state.total,progressLabel:state.initialLoad?'inläst':'genomsökt'});
     }
-    if(!await progressiveSearchFrameFinal(job))return;
+    if(!await progressiveVisualFrameFinal(job))return;
   }
   if(job.cancelled)return;
   if(filterAccumulator){
@@ -564,23 +708,28 @@ progressiveSearchHandlersFinal.set('decision-activity',async job=>{
       state.matches.push(row);
       decisionActivitySummaryCollectFinal(state.summary,row);
       progressiveInsertRankedFinal(state.previewRows,row,compare,decisionVisibleCount(0,Number.MAX_SAFE_INTEGER));
-    }while(state.index<state.total&&traversed<48&&!progressiveSliceExpiredFinal(started,5));
+    }while(state.index<state.total&&traversed<progressiveRecordsPerFrameFinal.activity&&!progressiveSliceExpiredFinal(started,4));
     const now=performance.now();
-    if(state.matches.length!==lastPaintCount&&(lastPaintCount===0||!state.hasPainted||now-lastPaint>=48||state.index===state.total)){
+    if(state.matches.length!==lastPaintCount&&(lastPaintCount===0||!state.hasPainted||now-lastPaint>=32||state.index===state.total)){
       decisionActivityProgressivePaintFinal(state,false);
       lastPaint=now;
       lastPaintCount=state.matches.length;
     }else if(decisionActivityProgressiveSearchStateFinal===state){
       $('decisionActivityStatus').textContent=progressiveResultStatusFinal({active:true,matches:state.matches.length,visible:$('decisionActivityBody')?.children.length||0,index:state.index,total:state.total,progressLabel:state.initialLoad?'inläst':'genomsökt'});
     }
-    if(!await progressiveSearchFrameFinal(job))return;
+    if(!await progressiveVisualFrameFinal(job))return;
   }
   if(job.cancelled)return;
   state.sortedRows=await progressiveCooperativeSortFinal(state.matches,compare,job,5);
   if(job.cancelled||!state.sortedRows)return;
   state.visibleRows=state.matches;
   state.previewRows=state.sortedRows.slice(0,decisionVisibleCount(0,state.sortedRows.length));
-  state.revealCount=decisionVisibleCount((decisionActivityTabs[0]||{page:0}).page||0,state.sortedRows.length);
+  const finalVisibleCount=decisionVisibleCount((decisionActivityTabs[0]||{page:0}).page||0,state.sortedRows.length);
+  while(decisionActivityProgressiveSearchStateFinal===state&&!job.cancelled&&state.revealCount<finalVisibleCount){
+    decisionActivityProgressivePaintFinal(state,false);
+    if(!await progressiveVisualFrameFinal(job))return;
+  }
+  if(decisionActivityProgressiveSearchStateFinal!==state||job.cancelled)return;
   if(state.initialLoad)decisionActivityInitialLoadCompleteFinal=true;
   decisionActivityProgressivePaintFinal(state,true);
 });
@@ -1194,7 +1343,7 @@ function decisionProgressiveStatusFinal(state,complete,visibleCount){
     visible:visibleCount,
     index:traversed,
     total,
-    percentOverride:initial?86+(total?Math.min(1,traversed/total)*14:0):null,
+    percentOverride:null,
     progressLabel:initial?'inläst':'genomsökt'
   });
 }
@@ -1207,15 +1356,7 @@ function decisionProgressivePaintRankedFinal(state,complete=false){
   const filteredRows=state.filteredMatches;
   const rows=complete?state.sortedRows:state.previewRows;
   const targetCount=decisionVisibleCount(decisionListTab().page||0,rows.length);
-  if(state.previewCarryCount&&!complete&&rows.length<Math.min(state.previewCarryCount,decisionPageSize())){
-    $('decisionPage').textContent=decisionProgressiveStatusFinal(state,false,$('decisionBody')?.children.length||0);
-    return;
-  }
-  if(state.previewCarryCount){
-    state.revealCount=Math.max(state.revealCount,Math.min(state.previewCarryCount,targetCount));
-    state.previewCarryCount=0;
-  }
-  state.revealCount=targetCount;
+  state.revealCount=complete?targetCount:Math.min(targetCount,(state.revealCount||0)+progressiveVisibleRowsPerPaintFinal.decision);
   const visibleCount=Math.min(targetCount,state.revealCount);
   decisionEnsureStableHeaderFinal();
   if(visibleCount||complete)$('decisionMasterPane')?.classList.remove('table-shell-awaiting-data');
@@ -1224,7 +1365,7 @@ function decisionProgressivePaintRankedFinal(state,complete=false){
     if(wrap)wrap.scrollTop=0;
     renderDecisionTabs();
   }
-  decisionProgressiveReconcileRowsFinal(rows.slice(0,visibleCount),state.hasPainted);
+  decisionProgressiveReconcileRowsFinal(rows.slice(0,visibleCount),state.hasPainted&&!state.initialLoad);
   state.hasPainted=true;
   decisionStableListRenderFinal={key:decisionStableListKeyFinal(),filteredRows,rows,rendered:visibleCount};
   progressiveOverviewCardsFinal('decisionOverview',decisionSummaryEntriesFinal(state.summary),!complete);
@@ -1270,7 +1411,93 @@ function decisionSummaryHtmlFinal(summary){
   return decisionSummaryEntriesFinal(summary).map(([label,value])=>`<div class="card"><span>${esc(label)}</span><b>${esc(String(value))}</b></div>`).join('');
 }
 
+function decisionIndexAdvancedFiltersSelectedFinal(){
+  return ['decisionParty','decisionMember','decisionVote'].some(id=>selectedDecisionValues(id).length);
+}
+
+function decisionShouldUseTableIndexFinal(){
+  if(!decisionTableIndexStartedFinal||decisionIndexAdvancedFiltersSelectedFinal())return false;
+  return !decisionTableIndexErrorFinal||!decisionCanonicalPreparationReadyFinal();
+}
+
+function decisionTableIndexPredicateFinal(row,query){
+  const organs=selectedDecisionValues('decisionOrgan'),results=selectedDecisionValues('decisionResult'),types=selectedDecisionValues('decisionProposalType');
+  if(!decisionDateMatches(row.date))return false;
+  if(organs.length&&!organs.includes(municipalNorm(row.body)))return false;
+  if(results.length&&!results.includes(municipalNorm(row.result||'beslut')))return false;
+  if(types.length&&!types.includes(municipalNorm(row.proposalType||'beslut')))return false;
+  if(!query)return true;
+  const quickQuery=fuzzySearchNormalize(query);
+  return decisionStableQuickSearchTextFinal(row).includes(quickQuery)||decisionStableSearchMatchesFinal(row,query);
+}
+
+async function decisionRunTableIndexJobFinal(job){
+  const query=decisionProgressiveSearchKeyFinal(),baseFilterKey=decisionStableBaseFilterKeyFinal();
+  const sortKey=`${decisionSortColumn}|${decisionSortDir}|${decisionPageSize()}`;
+  const compare=(a,b)=>{
+    if(query){const relevance=decisionPointSearchRelevanceFinal(b,query)-decisionPointSearchRelevanceFinal(a,query);if(relevance)return relevance;}
+    return decisionSortCompare(a,b);
+  };
+  const state={fromTableIndex:true,key:query,baseFilterKey,sortKey,dataKey:'table-index',matches:new Set(),filteredMatches:[],previewRows:[],sortedRows:[],summary:decisionSummaryAccumulatorFinal(),index:0,total:decisionTableIndexTotalFinal,progressIndex:0,progressTotal:decisionTableIndexTotalFinal,complete:true,finished:false,initialLoad:!decisionInitialLoadCompleteFinal&&!query,hasPainted:false,paintPending:false,revealCount:0};
+  decisionProgressiveSearchStateFinal=state;
+  decisionListTab().page=0;
+  decisionProgressivePaintRankedFinal(state,false);
+  let lastPaint=performance.now(),revision=decisionTableIndexRevisionFinal;
+  while(!job.cancelled){
+    state.total=decisionTableIndexTotalFinal||state.total;
+    state.progressTotal=state.total;
+    let processed=false;
+    while(state.index<decisionTableIndexRowsFinal.length&&!job.cancelled){
+      const sliceStarted=performance.now();let traversed=0,matchChanged=false;
+      do{
+        const row=decisionTableIndexRowsFinal[state.index++];
+        traversed++;processed=true;
+        if(decisionTableIndexPredicateFinal(row,query)){
+          state.matches.add(row);
+          state.filteredMatches.push(row);
+          decisionSummaryCollectFinal(state.summary,row);
+          progressiveInsertRankedFinal(state.previewRows,row,compare,decisionPageSize());
+          matchChanged=true;
+        }
+      }while(state.index<decisionTableIndexRowsFinal.length&&traversed<progressiveRecordsPerFrameFinal.decision&&!progressiveSliceExpiredFinal(sliceStarted,6));
+      state.progressIndex=state.index;
+      const now=performance.now();
+      const visibleTarget=Math.min(decisionPageSize(),state.previewRows.length),needsMoreVisibleRows=state.revealCount<visibleTarget;
+      if(!state.hasPainted||(matchChanged&&needsMoreVisibleRows&&now-lastPaint>=48)){
+        decisionProgressivePaintRankedFinal(state,false);
+        lastPaint=now;
+      }else $('decisionPage').textContent=decisionProgressiveStatusFinal(state,false,$('decisionBody')?.children.length||0);
+      if(state.index<decisionTableIndexRowsFinal.length&&!await progressiveSearchFrameFinal(job))return;
+    }
+    if(decisionTableIndexCompleteFinal&&state.index>=decisionTableIndexRowsFinal.length)break;
+    if(processed){
+      decisionProgressivePaintRankedFinal(state,false);
+      if(!await progressiveSearchFrameFinal(job))return;
+    }
+    revision=decisionTableIndexRevisionFinal;
+    if(state.index<decisionTableIndexRowsFinal.length||decisionTableIndexCompleteFinal)continue;
+    await decisionAwaitTableIndexChangeFinal(revision);
+  }
+  if(job.cancelled)return;
+  state.total=decisionTableIndexTotalFinal||state.index;
+  state.progressTotal=state.total;
+  state.progressIndex=state.index;
+  state.sortedRows=await progressiveCooperativeSortFinal(state.filteredMatches,compare,job,3);
+  if(job.cancelled||!state.sortedRows)return;
+  state.previewRows=state.sortedRows.slice(0,decisionPageSize());
+  const finalVisibleCount=decisionVisibleCount(decisionListTab().page||0,state.sortedRows.length);
+  while(decisionProgressiveSearchStateFinal===state&&!job.cancelled&&state.revealCount<finalVisibleCount){
+    decisionProgressivePaintRankedFinal(state,false);
+    if(!await progressiveVisualFrameFinal(job))return;
+  }
+  if(decisionProgressiveSearchStateFinal!==state||job.cancelled)return;
+  state.finished=true;
+  if(state.initialLoad)decisionInitialLoadCompleteFinal=true;
+  decisionProgressivePaintRankedFinal(state,true);
+}
+
 progressiveSearchHandlersFinal.set('decision',async job=>{
+  if(decisionShouldUseTableIndexFinal())return decisionRunTableIndexJobFinal(job);
   const query=decisionProgressiveSearchKeyFinal();
   const baseFilterKey=decisionStableBaseFilterKeyFinal();
   const dataKey=`${decisionAllPointRows.length}|${decisionRows.length}|${decisionMemberRows.length}`;
@@ -1279,12 +1506,10 @@ progressiveSearchHandlersFinal.set('decision',async job=>{
     if(query){const relevance=decisionPointSearchRelevanceFinal(b,query)-decisionPointSearchRelevanceFinal(a,query);if(relevance)return relevance;}
     return decisionSortCompare(a,b);
   };
-  const state={key:query,baseFilterKey,sortKey,dataKey,matches:new Set(),filteredMatches:[],previewRows:[],sortedRows:[],summary:decisionSummaryAccumulatorFinal(),index:0,total:decisionAllPointRows.length,progressIndex:0,progressTotal:decisionAllPointRows.length*(query?2:1),complete:true,finished:false,initialLoad:!decisionInitialLoadCompleteFinal,hasPainted:false,paintPending:false,revealCount:0};
+  const state={key:query,baseFilterKey,sortKey,dataKey,matches:new Set(),filteredMatches:[],previewRows:[],sortedRows:[],summary:decisionSummaryAccumulatorFinal(),index:0,total:decisionAllPointRows.length,progressIndex:0,progressTotal:decisionAllPointRows.length,complete:true,finished:false,initialLoad:!decisionInitialLoadCompleteFinal,hasPainted:false,paintPending:false,revealCount:0};
   decisionProgressiveSearchStateFinal=state;
   decisionListTab().page=0;
-  const hasDiaryPreview=!!$('decisionBody')?.querySelector('.decision-preview-row');
-  if(hasDiaryPreview){state.hasPainted=true;state.previewCarryCount=$('decisionBody').children.length;}
-  else decisionProgressivePaintRankedFinal(state,false);
+  decisionProgressivePaintRankedFinal(state,false);
   let baseRows=decisionStableBaseRowsFinal?.key===baseFilterKey&&decisionStableBaseRowsFinal?.dataKey===dataKey?decisionStableBaseRowsFinal.rows:null;
   if(!baseRows){
     baseRows=await decisionStableBuildBaseRowsFinal(job);
@@ -1298,60 +1523,46 @@ progressiveSearchHandlersFinal.set('decision',async job=>{
     state.progressTotal=state.total;
     let lastPaint=performance.now();
     while(state.index<state.total&&!job.cancelled){
-      const started=performance.now();
+      const started=performance.now();let traversed=0;
       do{
         const row=baseRows[state.index++];
+        traversed++;
         state.filteredMatches.push(row);
         decisionSummaryCollectFinal(state.summary,row);
         progressiveInsertRankedFinal(state.previewRows,row,compare,decisionPageSize());
-      }while(state.index<state.total&&!progressiveSliceExpiredFinal(started,3));
+      }while(state.index<state.total&&traversed<progressiveRecordsPerFrameFinal.decision&&!progressiveSliceExpiredFinal(started,6));
       state.progressIndex=state.index;
       const now=performance.now();
-      if(!state.hasPainted||now-lastPaint>=110){
+      if(!state.hasPainted||now-lastPaint>=48||state.index===state.total){
         decisionProgressivePaintRankedFinal(state,false);
         lastPaint=now;
+      }else{
+        $('decisionPage').textContent=decisionProgressiveStatusFinal(state,false,$('decisionBody')?.children.length||0);
       }
       if(state.index<state.total&&!await progressiveSearchFrameFinal(job))return;
     }
   }else{
     const quickQuery=fuzzySearchNormalize(query);
-    let quickIndex=0,quickPaintCount=0;
-    while(quickIndex<state.total&&!job.cancelled){
-      const quickStarted=performance.now(),matchesBefore=state.matches.size;
-      do{
-        const row=decisionAllPointRows[quickIndex++];
-        if(decisionStableQuickSearchTextFinal(row).includes(quickQuery)){
-          state.matches.add(row);
-          const filteredRow=baseByKey.get(decisionProposalKey(row));
-          if(filteredRow){state.filteredMatches.push(filteredRow);decisionSummaryCollectFinal(state.summary,filteredRow);progressiveInsertRankedFinal(state.previewRows,filteredRow,compare,decisionPageSize());}
-        }
-      }while(quickIndex<state.total&&!progressiveSliceExpiredFinal(quickStarted,3));
-      state.progressIndex=quickIndex;
-      if(state.matches.size>matchesBefore&&quickPaintCount<2){
-        decisionProgressivePaintRankedFinal(state,false);
-        quickPaintCount++;
-      }
-      if(quickIndex<state.total&&!await progressiveSearchFrameFinal(job))return;
-    }
-    if(job.cancelled)return;
-    decisionProgressivePaintRankedFinal(state,false);
-    let lastPaint=performance.now(),lastPaintCount=state.matches.size;
+    let lastPaint=performance.now(),lastPaintCount=0;
     while(state.index<state.total&&!job.cancelled){
-      const sliceStarted=performance.now();
+      const sliceStarted=performance.now();let traversed=0;
       do{
         const row=decisionAllPointRows[state.index++];
-        if(decisionStableSearchMatchesFinal(row,query)&&!state.matches.has(row)){
+        traversed++;
+        if(decisionStableQuickSearchTextFinal(row).includes(quickQuery)||decisionStableSearchMatchesFinal(row,query)){
           state.matches.add(row);
           const filteredRow=baseByKey.get(decisionProposalKey(row));
           if(filteredRow){state.filteredMatches.push(filteredRow);decisionSummaryCollectFinal(state.summary,filteredRow);progressiveInsertRankedFinal(state.previewRows,filteredRow,compare,decisionPageSize());}
         }
-      }while(state.index<state.total&&!progressiveSliceExpiredFinal(sliceStarted,3));
-      state.progressIndex=state.total+state.index;
+      }while(state.index<state.total&&traversed<progressiveRecordsPerFrameFinal.decision&&!progressiveSliceExpiredFinal(sliceStarted,6));
+      state.progressIndex=state.index;
       const now=performance.now();
-      if(!state.hasPainted||state.matches.size!==lastPaintCount&&now-lastPaint>=240){
+      if(state.matches.size!==lastPaintCount&&(!state.hasPainted||now-lastPaint>=48||state.index===state.total)){
         decisionProgressivePaintRankedFinal(state,false);
-        lastPaint=performance.now();
+        lastPaint=now;
         lastPaintCount=state.matches.size;
+      }else{
+        $('decisionPage').textContent=decisionProgressiveStatusFinal(state,false,$('decisionBody')?.children.length||0);
       }
       if(state.index<state.total&&!await progressiveSearchFrameFinal(job))return;
     }
@@ -1361,7 +1572,12 @@ progressiveSearchHandlersFinal.set('decision',async job=>{
   if(job.cancelled||!state.sortedRows)return;
   state.previewRows=state.sortedRows.slice(0,decisionPageSize());
   state.summaryHtml=decisionSummaryHtmlFinal(state.summary);
-  state.revealCount=decisionVisibleCount(decisionListTab().page||0,state.sortedRows.length);
+  const finalVisibleCount=decisionVisibleCount(decisionListTab().page||0,state.sortedRows.length);
+  while(decisionProgressiveSearchStateFinal===state&&!job.cancelled&&state.revealCount<finalVisibleCount){
+    decisionProgressivePaintRankedFinal(state,false);
+    if(!await progressiveVisualFrameFinal(job))return;
+  }
+  if(decisionProgressiveSearchStateFinal!==state||job.cancelled)return;
   state.finished=true;
   if(state.initialLoad)decisionInitialLoadCompleteFinal=true;
   decisionProgressivePaintRankedFinal(state,true);
@@ -1395,13 +1611,19 @@ function decisionBindStableListEventsFinal(){
     const releasePointer=()=>{
       decisionProgressivePointerDownFinal=false;
       const state=decisionProgressiveSearchStateFinal;
-      if(state?.paintPending)requestAnimationFrame(()=>decisionProgressivePaintRankedFinal(state,state.index>=state.total));
+      if(state?.paintPending)requestAnimationFrame(()=>decisionProgressivePaintRankedFinal(state,!!state.finished));
     };
     window.addEventListener('pointerup',releasePointer);
     window.addEventListener('pointercancel',releasePointer);
     body.addEventListener('click',event=>{
       const row=event.target.closest?.('.decision-selectable-row');
       if(!row||event.target.closest('a'))return;
+      if(!decisionCanonicalPreparationReadyFinal()){
+        const id=row.dataset.id,proposalKey=row.dataset.proposalKey;
+        decisionRequestCanonicalDetailsFinal();
+        ensureDecisionCanonicalDataFinal().then(()=>openDecisionDetail(id,proposalKey));
+        return;
+      }
       openDecisionDetail(row.dataset.id,row.dataset.proposalKey);
     });
   }
@@ -1674,8 +1896,48 @@ setRawPageSize=function(size){
    fully interactive. */
 function rawLoadHistoricWorkerFinal(worker){
   return new Promise((resolve,reject)=>{
-    let state=null,filters=null,query='',filterAccumulator=null,lastPaint=performance.now();
-    worker.onmessage=async event=>{
+    let state=null,filters=null,query='',filterAccumulator=null,lastPaint=performance.now(),workerComplete=false,drainScheduled=false,finishing=false;
+    const queue=[];let queueIndex=0;
+    const finish=async()=>{
+      if(finishing||!state)return;
+      finishing=true;
+      try{
+        worker.terminate();
+        rawFilterOptionCacheFinal=rawFinalizeFilterOptionsFinal(filterAccumulator);
+        rawReady=true;
+        buildRawFilters();
+        const current=rawProgressiveSearchStateFinal===state&&state.key===rawProgressiveSearchKeyFinal();
+        if(current)await rawFinalizeProgressiveStateFinal(state,{cancelled:false});
+        else rawScheduleProgressiveFinal();
+        resolve();
+      }catch(error){reject(error);}
+    };
+    const scheduleDrain=()=>{
+      if(drainScheduled||finishing||!state)return;
+      drainScheduled=true;
+      requestAnimationFrame(async()=>{
+        drainScheduled=false;
+        if(finishing)return;
+        const started=performance.now();let traversed=0;
+        while(queueIndex<queue.length&&traversed<progressiveRecordsPerFrameFinal.raw&&!progressiveSliceExpiredFinal(started,4)){
+          const row=queue[queueIndex++];row.__rawId=rawRows.length+1;rawRows.push(row);state.index=rawRows.length;traversed++;
+          rawCollectFilterOptionFinal(filterAccumulator,row);
+          if(rawProgressivePredicateFinal(row,filters,query)){
+            state.matches.push(row);
+            rawOverviewCollectFinal(state.summary,row);
+            progressiveInsertRankedFinal(isRawInvalidVoteRow(row)?state.previewIneligible:state.previewEligible,row,rawProgressiveCompareFinal,rawPageSize());
+          }
+        }
+        if(rawProgressiveSearchStateFinal===state){
+          const now=performance.now();
+          if(now-lastPaint>=48||workerComplete&&queueIndex===queue.length){rawProgressivePaintFinal(state,false);lastPaint=now;}
+          else $('rawCount').textContent=progressiveResultStatusFinal({active:true,matches:state.matches.length,visible:($('rawEligibleBody')?.children.length||0)+($('rawIneligibleBody')?.children.length||0),index:state.index,total:state.total,progressLabel:'inläst'});
+        }
+        if(queueIndex<queue.length)scheduleDrain();
+        else if(workerComplete)await finish();
+      });
+    };
+    worker.onmessage=event=>{
       const message=event.data||{};
       if(message.type==='historic-meta'){
         rawColumns=(message.columns||[]).filter(column=>!rawHiddenColumns.has(column));
@@ -1685,32 +1947,18 @@ function rawLoadHistoricWorkerFinal(worker){
         state={key:rawProgressiveSearchKeyFinal(),matches:[],visibleRows:[],previewEligible:[],previewIneligible:[],sortedRows:[],summary:rawOverviewAccumulatorFinal(),index:0,total:Number(message.total)||0,initialLoad:true,hasPainted:false,paintPending:false,revealEligible:0,revealIneligible:0};
         rawProgressiveSearchStateFinal=state;
         rawProgressivePaintFinal(state,false);
+        lastPaint=performance.now();
       }else if(message.type==='historic-chunk'&&state){
-        for(const source of message.value||[]){
-          const row=source;row.__rawId=rawRows.length+1;rawRows.push(row);state.index=rawRows.length;
-          rawCollectFilterOptionFinal(filterAccumulator,row);
-          if(rawProgressivePredicateFinal(row,filters,query)){
-            state.matches.push(row);
-            rawOverviewCollectFinal(state.summary,row);
-            progressiveInsertRankedFinal(isRawInvalidVoteRow(row)?state.previewIneligible:state.previewEligible,row,rawProgressiveCompareFinal,rawPageSize());
-          }
-        }
-        const now=performance.now();
-        if(rawProgressiveSearchStateFinal===state&&now-lastPaint>=100){rawProgressivePaintFinal(state,false);lastPaint=now;}
+        queue.push(...(message.value||[]));
+        scheduleDrain();
       }else if(message.type==='historic-complete'){
-        worker.terminate();
-        rawFilterOptionCacheFinal=rawFinalizeFilterOptionsFinal(filterAccumulator);
-        rawReady=true;
-        buildRawFilters();
-        const current=rawProgressiveSearchStateFinal===state&&state.key===rawProgressiveSearchKeyFinal();
-        if(current)await rawFinalizeProgressiveStateFinal(state,{cancelled:false});
-        else rawScheduleProgressiveFinal();
-        resolve();
+        workerComplete=true;
+        scheduleDrain();
       }else if(message.type==='error'){
-        worker.terminate();reject(Error(message.message||'Den historiska valdatabasen kunde inte läsas.'));
+        if(!finishing){finishing=true;worker.terminate();reject(Error(message.message||'Den historiska valdatabasen kunde inte läsas.'));}
       }
     };
-    worker.onerror=event=>{worker.terminate();reject(Error(event.message||'Den historiska valdatabasen kunde inte läsas.'));};
+    worker.onerror=event=>{if(!finishing){finishing=true;worker.terminate();reject(Error(event.message||'Den historiska valdatabasen kunde inte läsas.'));}};
     worker.postMessage({
       mode:'historic',packed:historicPack,
       search:{hiddenColumns:[...rawHiddenColumns],electionLabels:rawElectionLabels,regionAliases:rawRegionAliases}
@@ -1748,7 +1996,7 @@ ensureRawData=async function(){
       const state={key:rawProgressiveSearchKeyFinal(),matches:[],visibleRows:[],previewEligible:[],previewIneligible:[],sortedRows:[],summary:rawOverviewAccumulatorFinal(),index:0,total:sourceRows.length,initialLoad:true,hasPainted:false,paintPending:false,revealEligible:0,revealIneligible:0};
       rawProgressiveSearchStateFinal=state;
       rawProgressivePaintFinal(state,false);
-      let lastPaint=performance.now(),started=performance.now();
+      let lastPaint=performance.now(),started=performance.now(),traversed=0;
       for(let index=0;index<sourceRows.length;index++){
         const source=sourceRows[index];
         let row;
@@ -1763,16 +2011,20 @@ ensureRawData=async function(){
         rawRows.push(row);
         rawCollectFilterOptionFinal(filterAccumulator,row);
         state.index=index+1;
+        traversed++;
         if(rawProgressivePredicateFinal(row,filters,query)){
           state.matches.push(row);
           rawOverviewCollectFinal(state.summary,row);
           progressiveInsertRankedFinal(isRawInvalidVoteRow(row)?state.previewIneligible:state.previewEligible,row,rawProgressiveCompareFinal,rawPageSize());
         }
-        if(progressiveSliceExpiredFinal(started,4)){
+        if(traversed>=progressiveRecordsPerFrameFinal.raw||progressiveSliceExpiredFinal(started,4)){
           const now=performance.now();
-          if(rawProgressiveSearchStateFinal===state&&now-lastPaint>=100){rawProgressivePaintFinal(state,false);lastPaint=now;}
+          if(rawProgressiveSearchStateFinal===state){
+            if(now-lastPaint>=48||state.index===state.total){rawProgressivePaintFinal(state,false);lastPaint=now;}
+            else $('rawCount').textContent=progressiveResultStatusFinal({active:true,matches:state.matches.length,visible:($('rawEligibleBody')?.children.length||0)+($('rawIneligibleBody')?.children.length||0),index:state.index,total:state.total,progressLabel:'inläst'});
+          }
           await new Promise(resolve=>requestAnimationFrame(resolve));
-          started=performance.now();
+          started=performance.now();traversed=0;
         }
       }
       rawFilterOptionCacheFinal=rawFinalizeFilterOptionsFinal(filterAccumulator);
@@ -1856,87 +2108,29 @@ function decisionActivityStableRenderRowsFinal(filteredRows,sortedRows,{complete
   if(state)state.hasPainted=true;
 }
 
-/* The first-page diary index is already available when the app starts. Use
-   its real protocol entries as an immediate table preview while the much
-   larger decision/vote pack is read. Canonical rows replace this preview as
-   soon as preparation completes. */
-let decisionDiaryPreviewRevisionFinal=0;
-
+/* Only canonical municipal rows are allowed into the results table. */
 function decisionCanonicalPreparationReadyFinal(){
   return !!(decisionReady&&decisionPack?._cooperativePreparationReadyFinal);
 }
 
-function decisionDiaryPreviewRowFinal(url,diary,index){
-  let documentTitle=String(url||'').split('/').pop()||'Protokoll';
-  try{documentTitle=decodeURIComponent(documentTitle);}catch(_error){}
-  documentTitle=documentTitle.replace(/\.pdf(?:\?.*)?$/i,'');
-  const date=documentTitle.match(/\d{4}-\d{2}-\d{2}/)?.[0]||'';
-  const body=documentTitle
-    .replace(/^\d{4}-\d{2}-\d{2}(?:\s+och\s+\d{4}-\d{2}-\d{2})?\s*/i,'')
-    .replace(/\s+(?:omedelbart\s+justerat\s+protokoll|§.*|,\s*§.*)$/i,'')
-    .trim()||'Kommunalt organ';
-  const id=`protocol-preview-${index}`,point=`sammantrade:preview:${index}`,title=[body,date].filter(Boolean).join(' · ');
-  return {id,point,date,title,pointTitle:title,description:'Hela protokollet för sammanträdet.',proposalType:'Sammanträden',url,sourceUrl:url,localPath:'',body,documentTitle:`${documentTitle}.pdf`,diary:String(diary||''),protocolDiary:String(diary||''),result:'beslut',matterId:id,voteIds:[],voteEvents:{},voteRoundCount:0,voteCount:0,yes:0,no:0,abstain:0,absent:0,fullVoteRoundCount:0,fullVoteCount:0,fullYes:0,fullNo:0,fullAbstain:0,fullAbsent:0,isMeeting:true,meetingKey:id};
-}
-
-function decisionDiaryPreviewMatchesFinal(row){
-  if(!decisionDateMatches(row.date))return false;
-  const organs=selectedDecisionValues('decisionOrgan'),types=selectedDecisionValues('decisionProposalType'),results=selectedDecisionValues('decisionResult');
-  if(organs.length&&!decisionOrganMatchesFinal(organs,row.body))return false;
-  if(types.length&&!types.includes(municipalNorm(row.proposalType)))return false;
-  if(results.length&&!results.includes(municipalNorm(row.result)))return false;
-  if(selectedDecisionValues('decisionParty').length||selectedDecisionValues('decisionMember').length||selectedDecisionValues('decisionVote').length)return false;
-  const query=decisionSearchNormalizeFinal(decisionSearchQuery);
-  return !query||decisionPointSearchRelevanceFinal(row,query)>0;
-}
-
-function decisionDiaryPreviewCompareFinal(a,b){
-  const query=decisionSearchNormalizeFinal(decisionSearchQuery);
-  if(query){
-    const relevance=decisionPointSearchRelevanceFinal(b,query)-decisionPointSearchRelevanceFinal(a,query);
-    if(relevance)return relevance;
+function decisionPaintTableBootstrapImmediatelyFinal(){
+  if(decisionProgressiveSearchStateFinal||!decisionTableIndexRowsFinal.length)return;
+  const query=decisionProgressiveSearchKeyFinal(),baseFilterKey=decisionStableBaseFilterKeyFinal();
+  const sortKey=`${decisionSortColumn}|${decisionSortDir}|${decisionPageSize()}`;
+  const compare=(a,b)=>{
+    if(query){const relevance=decisionPointSearchRelevanceFinal(b,query)-decisionPointSearchRelevanceFinal(a,query);if(relevance)return relevance;}
+    return decisionSortCompare(a,b);
+  };
+  const state={fromTableIndex:true,key:query,baseFilterKey,sortKey,dataKey:'table-index',matches:new Set(),filteredMatches:[],previewRows:[],sortedRows:[],summary:decisionSummaryAccumulatorFinal(),index:decisionTableIndexRowsFinal.length,total:decisionTableIndexTotalFinal,progressIndex:decisionTableIndexRowsFinal.length,progressTotal:decisionTableIndexTotalFinal,complete:true,finished:false,initialLoad:true,hasPainted:false,paintPending:false,revealCount:0};
+  for(const row of decisionTableIndexRowsFinal){
+    if(!decisionTableIndexPredicateFinal(row,query))continue;
+    state.matches.add(row);
+    state.filteredMatches.push(row);
+    decisionSummaryCollectFinal(state.summary,row);
+    progressiveInsertRankedFinal(state.previewRows,row,compare,decisionPageSize());
   }
-  return decisionSortCompare(a,b);
-}
-
-function decisionDiaryPreviewHtmlFinal(row){
-  return decisionStableRowHtmlFinal(row).replace('<tr class="decision-selectable-row','<tr aria-busy="true" class="decision-preview-row');
-}
-
-function decisionStartDiaryPreviewFinal(){
-  if(decisionCanonicalPreparationReadyFinal())return;
-  const entries=Object.entries(window.municipalProtocolDiaryPack?.byUrl||{});
-  if(!entries.length)return;
-  const revision=++decisionDiaryPreviewRevisionFinal,summary=decisionSummaryAccumulatorFinal(),rows=[],preview=[];
-  let index=0,hasPainted=false;
-  const paint=()=>{
-    if(revision!==decisionDiaryPreviewRevisionFinal||decisionCanonicalPreparationReadyFinal()||currentTopView()!=='decision')return;
-    const visible=preview.slice(0,decisionPageSize());
-    decisionEnsureStableHeaderFinal();
-    progressiveReconcileRowsFinal($('decisionBody'),visible,decisionProposalKey,decisionDiaryPreviewHtmlFinal,{animate:hasPainted});
-    hasPainted=true;
-    if(visible.length)$('decisionMasterPane')?.classList.remove('table-shell-awaiting-data');
-    progressiveOverviewCardsFinal('decisionOverview',decisionSummaryEntriesFinal(summary),true);
-    decisionUpdateInitialProgressFinal(entries.length?index/entries.length*8:8,{matches:rows.length,visible:visible.length});
-    $('decisionStatus').textContent='';
-    $('decisionStatus').hidden=true;
-  };
-  const step=()=>{
-    if(revision!==decisionDiaryPreviewRevisionFinal||decisionCanonicalPreparationReadyFinal()||currentTopView()!=='decision')return;
-    const started=performance.now();
-    do{
-      const [url,diary]=entries[index],row=decisionDiaryPreviewRowFinal(url,diary,index);
-      index++;
-      if(decisionDiaryPreviewMatchesFinal(row)){
-        rows.push(row);
-        decisionSummaryCollectFinal(summary,row);
-        progressiveInsertRankedFinal(preview,row,decisionDiaryPreviewCompareFinal,decisionPageSize());
-      }
-    }while(index<entries.length&&index%24!==0&&!progressiveSliceExpiredFinal(started,4));
-    paint();
-    if(index<entries.length)requestAnimationFrame(step);
-  };
-  requestAnimationFrame(step);
+  decisionProgressiveSearchStateFinal=state;
+  decisionProgressivePaintRankedFinal(state,false);
 }
 
 /* Paint the complete municipal UI before any large dataset is requested.
@@ -1956,9 +2150,9 @@ function renderMunicipalTableShellFinal(view){
     if(!decisionProgressiveSearchStateFinal){
       progressiveOverviewCardsFinal('decisionOverview',decisionSummaryEntriesFinal(decisionSummaryAccumulatorFinal()),true);
       $('decisionBody').replaceChildren();
-      $('decisionPage').textContent=progressiveResultStatusFinal({active:true,percentOverride:decisionInitialProgressPercentFinal,progressLabel:'inläst'});
+      $('decisionPage').textContent=progressiveResultStatusFinal({active:true,percentOverride:0,progressLabel:'inläst'});
+      decisionPaintTableBootstrapImmediatelyFinal();
     }
-    if(!decisionCanonicalPreparationReadyFinal())decisionStartDiaryPreviewFinal();
     $('decisionStatus').textContent='';
     $('decisionStatus').hidden=true;
     return;
@@ -1996,7 +2190,7 @@ function decisionActivityProgressivePaintFinal(state,complete=false){
   state.visibleRows=state.matches;
   const rows=complete?state.sortedRows:state.previewRows;
   const target=decisionVisibleCount((decisionActivityTabs[0]||{page:0}).page||0,rows.length);
-  if(!complete)state.revealCount=target;
+  if(!complete)state.revealCount=Math.min(target,(state.revealCount||0)+progressiveVisibleRowsPerPaintFinal.activity);
   decisionActivityStableRenderRowsFinal(state.matches,rows.slice(0,complete?target:state.revealCount),{complete,state});
   if(complete)buildDecisionActivityFilters();
 }
@@ -2058,15 +2252,23 @@ function decisionScheduleProgressiveRefreshFinal(){
   decisionActiveTab=0;
   resetDecisionPage();
   decisionStableListRenderFinal=null;
-  if(!decisionCanonicalPreparationReadyFinal()){decisionStartDiaryPreviewFinal();return;}
-  decisionDiaryPreviewRevisionFinal++;
+  decisionSignalTableIndexChangeFinal();
+  if(!decisionCanonicalPreparationReadyFinal()&&!decisionTableIndexStartedFinal)return;
   scheduleTableSearch('decision','decisionDecisionSearch',['decisionBody'],()=>renderDecisionView());
 }
 
 function decisionProgressiveStateIsCurrentFinal(){
   const state=decisionProgressiveSearchStateFinal;
   const dataKey=`${decisionAllPointRows.length}|${decisionRows.length}|${decisionMemberRows.length}`;
-  return !!state&&state.finished&&state.dataKey===dataKey&&state.key===decisionProgressiveSearchKeyFinal()&&state.baseFilterKey===decisionStableBaseFilterKeyFinal()&&state.sortKey===`${decisionSortColumn}|${decisionSortDir}|${decisionPageSize()}`;
+  const sourceCurrent=state?.fromTableIndex?!decisionIndexAdvancedFiltersSelectedFinal():state?.dataKey===dataKey;
+  return !!state&&state.finished&&sourceCurrent&&state.key===decisionProgressiveSearchKeyFinal()&&state.baseFilterKey===decisionStableBaseFilterKeyFinal()&&state.sortKey===`${decisionSortColumn}|${decisionSortDir}|${decisionPageSize()}`;
+}
+
+async function decisionHydrateFilterOptionsAfterPreparationFinal(){
+  if(!decisionCanonicalPreparationReadyFinal())return;
+  const job={cancelled:false};
+  const options=await decisionBuildFilterOptionsFinal(job);
+  if(options)await decisionApplyFilterOptionsFinal(options,job);
 }
 
 handleDecisionFilterChange=function(id){
@@ -2131,15 +2333,13 @@ setDecisionPageSize=function(size){
 };
 
 renderDecisionView=function(){
-  if(!decisionCanonicalPreparationReadyFinal()){
-    decisionStartDiaryPreviewFinal();
+  if(!decisionCanonicalPreparationReadyFinal()&&!decisionTableIndexStartedFinal){
     $('decisionStatus').textContent='';
     $('decisionStatus').hidden=true;
     $('decisionMasterPane').hidden=false;
     $('decisionDetailPane').hidden=true;
     return;
   }
-  decisionDiaryPreviewRevisionFinal++;
   renderDecisionPageSizeControls();
   renderDecisionTabs();
   const tab=decisionActiveTabState();

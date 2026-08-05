@@ -1,7 +1,7 @@
 ﻿let confirmResolver=null,confirmKeyHandler=null,confirmLastFocus=null;
 function closeConfirm(result){const overlay=$('confirmOverlay');if(confirmKeyHandler){document.removeEventListener('keydown',confirmKeyHandler);confirmKeyHandler=null;}overlay.hidden=true;document.body.style.overflow='';if(confirmLastFocus&&typeof confirmLastFocus.focus==='function')confirmLastFocus.focus();const resolve=confirmResolver;confirmResolver=null;confirmLastFocus=null;if(resolve)resolve(result);}
 function openResetConfirm(){if(confirmResolver)return Promise.resolve(false);const overlay=$('confirmOverlay');const accept=$('confirmAccept');const cancel=$('confirmCancel');confirmLastFocus=document.activeElement;overlay.hidden=false;document.body.style.overflow='hidden';return new Promise(resolve=>{confirmResolver=resolve;confirmKeyHandler=e=>{if(e.key==='Escape'){e.preventDefault();closeConfirm(false);}};document.addEventListener('keydown',confirmKeyHandler);accept.focus();});}
-let sessionResolver=null,sessionKeyHandler=null,sessionLastFocus=null,decisionViewMounted=false,decisionViewMountPromise=null,decisionViewMountScheduled=false;
+let sessionResolver=null,sessionKeyHandler=null,sessionLastFocus=null,decisionViewMounted=false,decisionViewMountPromise=null,decisionViewMountScheduled=false,decisionCanonicalMountPromise=null;
 function closeSessionDialog(result){const overlay=$('sessionOverlay');if(sessionKeyHandler){document.removeEventListener('keydown',sessionKeyHandler);sessionKeyHandler=null;}overlay.hidden=true;document.body.style.overflow='';if(sessionLastFocus&&typeof sessionLastFocus.focus==='function')sessionLastFocus.focus();const resolve=sessionResolver;sessionResolver=null;sessionLastFocus=null;if(resolve)resolve(result);}
 function setSessionMessage(message){$('sessionMessage').textContent=message;}
 function selectEntireSessionField(){const field=$('sessionField');field.focus();field.setSelectionRange(0,field.value.length);}
@@ -46,18 +46,28 @@ function zip(files){const out=[],central=[];let offset=0;for(const f of files){c
 function startDecisionViewMount(){
   if(decisionViewMounted)return Promise.resolve();
   if(decisionViewMountPromise)return decisionViewMountPromise;
-  decisionViewMountPromise=(async()=>{
-    await ensureDecisionPackLoaded();
-    await ensureDecisionDataProgressively();
+  decisionViewMountPromise=Promise.resolve().then(()=>{
+    decisionStartTableIndexLoadFinal();
+    decisionScheduleProgressiveRefreshFinal();
     decisionViewMounted=true;
-    if(currentTopView()==='decision')renderDecisionView();
-  })().catch(error=>{
+  }).catch(error=>{
     if(currentTopView()==='decision'){
       $('decisionStatus').hidden=false;
       $('decisionStatus').textContent=error?.message||'Kunde inte ladda kommunal data.';
     }
   }).finally(()=>{decisionViewMountPromise=null;});
   return decisionViewMountPromise;
+}
+function ensureDecisionCanonicalDataFinal(){
+  if(decisionCanonicalPreparationReadyFinal())return Promise.resolve();
+  if(decisionCanonicalMountPromise)return decisionCanonicalMountPromise;
+  decisionRequestCanonicalDetailsFinal();
+  decisionCanonicalMountPromise=(async()=>{
+    await ensureDecisionPackLoaded();
+    await ensureDecisionDataProgressively();
+    await decisionHydrateFilterOptionsAfterPreparationFinal();
+  })().finally(()=>{decisionCanonicalMountPromise=null;});
+  return decisionCanonicalMountPromise;
 }
 function scheduleDecisionViewMountAfterPaint(){
   if(decisionViewMounted||decisionViewMountPromise||decisionViewMountScheduled)return;
