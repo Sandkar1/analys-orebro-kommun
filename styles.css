@@ -1711,6 +1711,10 @@ td.num{
   gap:12px 18px;
 }
 
+.decision-toolbar[hidden]{
+  display:none;
+}
+
 .decision-activity-pane{
   position:relative;
   margin-top:34px;
@@ -3097,12 +3101,12 @@ table:not(.input-table) .decision-selectable-row:nth-child(even):hover td{
 }
 
 .raw-table-wrap tbody{
-  transition:opacity 110ms ease,transform 140ms ease;
+  transition:none;
 }
 
 .raw-table-wrap.table-results-updating tbody{
-  opacity:.52;
-  transform:translateY(2px);
+  opacity:1;
+  transform:none;
 }
 
 .raw-table-wrap.table-results-updating.table-progressive-loading tbody{
@@ -3139,7 +3143,7 @@ table:not(.input-table) .decision-selectable-row:nth-child(even):hover td{
 }
 
 .raw-table-wrap.table-results-refreshed tbody tr{
-  animation:table-row-refresh 180ms ease-out both;
+  animation:none;
 }
 
 @keyframes table-row-refresh{

@@ -36,10 +36,15 @@ async function ensureDecisionDataProgressively(){
   if(decisionReady)return;
   const pack=decisionPack;
   if(!pack||!Array.isArray(pack.d)||!Array.isArray(pack.r)){ensureDecisionData();return;}
-  const docs=pack.d.map((d,i)=>({...d,_idx:i})),voteRows=[],byDecision=new Map(),allPointRows=[],pointTotals=new Map();
+  const docs=[],voteRows=[],byDecision=new Map(),allPointRows=[],pointTotals=new Map();
+  for(let start=0;start<pack.d.length;start+=40){
+    const end=Math.min(pack.d.length,start+40);
+    for(let i=start;i<end;i++)docs.push({...pack.d[i],_idx:i});
+    await decisionLoadYield();
+  }
   decisionActivityRows=Array.isArray(pack.a)?pack.a:[];
-  for(let start=0;start<docs.length;start+=60){
-    const end=Math.min(docs.length,start+60);
+  for(let start=0;start<docs.length;start+=20){
+    const end=Math.min(docs.length,start+20);
     for(let i=start;i<end;i++){
       const doc=docs[i],id=String(doc.i||`d${doc._idx}`),date=String(doc.dt||''),title=String(doc.t||''),url=String(doc.u||doc.lp||''),pointMap=doc.p||{},voteMap=doc.v||{},pointMeta=doc.pm||{},body=String(doc.b||''),bodyType=String(doc.bt||''),documentTitle=String(doc.doc||''),documentKey=documentTitle?`${documentTitle}|${id}`:'',diary=String(doc.dn||''),caseNumber=String(doc.cn||'');
       Object.entries(pointMap).forEach(([point,description])=>{const meta=pointMeta[String(point)]||{},voteId=String(voteMap[String(point)]||voteMap[point]||''),proposalType=decisionProposalTypeForPoint(doc,point);allPointRows.push({id,point:String(point),date,title,pointTitle:`${point}. ${title||description||'Ärende'}`,description:String(description||''),proposalType,url,docIndex:doc._idx,voteId,voteIds:voteId?[voteId]:[],body,bodyType,documentTitle,documentKey,diary,caseNumber,result:String(meta.result||'beslut'),sourceUrl:String(meta.source_url||url||''),localPath:String(meta.local_path||doc.lp||''),voteCount:0,yes:0,no:0,abstain:0,absent:0,fullVoteCount:0,fullYes:0,fullNo:0,fullAbstain:0,fullAbsent:0});});
@@ -49,13 +54,17 @@ async function ensureDecisionDataProgressively(){
     await decisionLoadYield();
   }
   const voteTotal=Math.ceil(pack.r.length/6);
-  for(let start=0;start<pack.r.length;start+=6000){
-    const end=Math.min(pack.r.length,start+6000);
+  for(let start=0;start<pack.r.length;start+=1200){
+    const end=Math.min(pack.r.length,start+1200);
     for(let i=start;i<end;i+=6){const docIndex=Number(pack.r[i]),point=String(pack.r[i+1]??''),name=String(pack.r[i+2]??''),party=String(pack.r[i+3]??''),vote=String(pack.r[i+4]??''),intressentId=String(pack.r[i+5]??''),doc=docs[docIndex]||{},date=String(doc.dt||''),id=String(doc.i||`d${docIndex}`),title=String(doc.t||''),url=String(doc.u||doc.lp||''),description=decisionPointLabel(doc,point),row={docIndex,id,date,title,point,description,proposalType:decisionProposalTypeForPoint(doc,point),name,party,vote,intressentId,url,order:i/6};voteRows.push(row);if(!byDecision.has(id))byDecision.set(id,{id,date,title,url,docIndex,pointMap:doc.p||{},voteRows:[]});byDecision.get(id).voteRows.push(row);const key=`${id}|${point}`;if(!pointTotals.has(key))pointTotals.set(key,{fullVoteCount:0,fullYes:0,fullNo:0,fullAbstain:0,fullAbsent:0});const total=pointTotals.get(key);total.fullVoteCount++;if(vote==='Ja')total.fullYes++;else if(vote==='Nej')total.fullNo++;else if(vote==='Avstår')total.fullAbstain++;else if(vote==='Frånvarande')total.fullAbsent++;}
     decisionLoadingStatus(Math.ceil(end/6),voteTotal,'Laddar information',false);
     await decisionLoadYield();
   }
-  allPointRows.forEach(row=>Object.assign(row,pointTotals.get(`${row.id}|${row.point}`)||{}));
+  for(let start=0;start<allPointRows.length;start+=200){
+    const end=Math.min(allPointRows.length,start+200);
+    for(let i=start;i<end;i++){const row=allPointRows[i];Object.assign(row,pointTotals.get(`${row.id}|${row.point}`)||{});}
+    await decisionLoadYield();
+  }
   decisionRows=voteRows;
   decisionDecisionRows=[...byDecision.values()].map(d=>({id:d.id,date:d.date,title:d.title,url:d.url,docIndex:d.docIndex,pointCount:Object.keys(d.pointMap||{}).length,voteCount:d.voteRows.length,yes:0,no:0,abstain:0,absent:0}));
   decisionAllPointRows=allPointRows;
@@ -2795,9 +2804,10 @@ function decisionApplyCanonicalVoteTotalsFinal(row){
 const ensureDecisionDataBeforeCanonicalVoteTotalsFinal=ensureDecisionData;
 ensureDecisionData=function(){
   ensureDecisionDataBeforeCanonicalVoteTotalsFinal();
-  if(!decisionReady)return;
+  if(!decisionReady||decisionPack?._canonicalVoteTotalsReadyFinal)return;
   decisionApplyInferredParagraphVotesFinal();
   decisionAllPointRows.forEach(decisionApplyCanonicalVoteTotalsFinal);
+  decisionPack._canonicalVoteTotalsReadyFinal=true;
 };
 
 const filteredDecisionPointRowsBeforeCanonicalVoteTotalsFinal=filteredDecisionPointRows;
@@ -3399,12 +3409,13 @@ function decisionProtocolMatterHeaderFinal(row){
   return String(row.protocolHeader||row.title||'Ärende').replace(/\s+/g,' ').trim()||'Ärende';
 }
 function decisionApplyProtocolMatterHeadersFinal(){
-  if(!Array.isArray(decisionAllPointRows))return;
+  if(!Array.isArray(decisionAllPointRows)||decisionPack?._protocolMatterHeadersReadyFinal)return;
   decisionAllPointRows.forEach(row=>{
     const header=decisionProtocolMatterHeaderFinal(row);
     row.pointTitle=header;
     row.canonicalMatterHeader=header;
   });
+  if(decisionPack)decisionPack._protocolMatterHeadersReadyFinal=true;
 }
 const ensureDecisionDataBeforeProtocolMatterHeadersFinal=ensureDecisionData;
 ensureDecisionData=function(){
@@ -3464,6 +3475,7 @@ decisionOrganMatchesFinal=function(selected,value){
   return decisionOrganMatches(selected,value);
 };
 function decisionApplyOrganNamesFinal(){
+  if(decisionPack?._canonicalOrganNamesReadyFinal)return;
   for(const rows of [decisionAllPointRows,decisionRows,decisionMemberRows,decisionPositionRows]){
     if(!Array.isArray(rows))continue;
     rows.forEach(row=>{
@@ -3473,6 +3485,7 @@ function decisionApplyOrganNamesFinal(){
   if(decisionFilterLocks?.decisionOrgan){
     decisionFilterLocks.decisionOrgan=uniqueDecisionOrganValues(decisionFilterLocks.decisionOrgan);
   }
+  if(decisionPack)decisionPack._canonicalOrganNamesReadyFinal=true;
 }
 const ensureDecisionDataBeforeCanonicalOrganNamesFinal=ensureDecisionData;
 ensureDecisionData=function(){
@@ -3500,7 +3513,7 @@ function decisionMeetingChildSearchTextFinal(row){
   ].join(' ');
 }
 function decisionApplyMeetingSearchRollupsFinal(){
-  if(!Array.isArray(decisionAllPointRows))return;
+  if(!Array.isArray(decisionAllPointRows)||decisionPack?._meetingSearchRollupsReadyFinal)return;
   const textByProtocol=new Map();
   const textByMeeting=new Map();
   decisionAllPointRows.forEach(row=>{
@@ -3517,6 +3530,7 @@ function decisionApplyMeetingSearchRollupsFinal(){
     const childText=textByProtocol.get(row.meetingKey)||textByMeeting.get(decisionMeetingKey(row.date,row.body))||'';
     row.meetingSearchText=decisionSearchNormalizeFinal(`${ownText} ${childText}`);
   });
+  if(decisionPack)decisionPack._meetingSearchRollupsReadyFinal=true;
 }
 const ensureDecisionDataBeforeMeetingSearchRollupsFinal=ensureDecisionData;
 ensureDecisionData=function(){
@@ -3697,7 +3711,10 @@ function decisionNormalizeVoteCountersFinal(row){
 const ensureDecisionDataBeforeVoteCounterNormalizationFinal=ensureDecisionData;
 ensureDecisionData=function(){
   ensureDecisionDataBeforeVoteCounterNormalizationFinal();
-  if(decisionReady)decisionAllPointRows.forEach(decisionNormalizeVoteCountersFinal);
+  if(decisionReady&&!decisionPack?._voteCountersNormalizedFinal){
+    decisionAllPointRows.forEach(decisionNormalizeVoteCountersFinal);
+    decisionPack._voteCountersNormalizedFinal=true;
+  }
 };
 const filteredDecisionPointRowsBeforeVoteCounterNormalizationFinal=filteredDecisionPointRows;
 filteredDecisionPointRows=function(){
