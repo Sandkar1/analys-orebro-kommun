@@ -2610,7 +2610,10 @@ openDecisionDetail=function(id,proposalKey=''){
   const proposalData=payload.proposal?decisionProposalTabData(payload.proposal):{};
   const key=proposalData.proposalKey||String(proposalKey||'');
   const existing=decisionTabs.findIndex(tab=>tab.kind==='decision'&&tab.id===payload.id&&String(tab.proposalKey||'')===key);
-  if(existing>=0){decisionActiveTab=existing;renderDecisionView();return;}
+  if(existing>=0){
+    Object.assign(decisionTabs[existing],proposalData,{title:payload.proposal?decisionTabTitleFor(payload.proposal):decisionTabs[existing].title,pendingCanonical:false});
+    decisionActiveTab=existing;renderDecisionView();return;
+  }
   decisionTabs.push({kind:'decision',id:payload.id,...proposalData,title:payload.proposal?decisionTabTitleFor(payload.proposal):decisionTabTitleFor(payload.decision||{title:'Ärende'}),page:0});
   decisionActiveTab=decisionTabs.length-1;
   renderDecisionView();
@@ -2935,6 +2938,58 @@ function decisionPointPartyHtmlCanonicalFinal(group,index,total,proposal=null){
   return `<article class="decision-point-card"><h3>${heading}</h3>${meaning}${conflict}${voteHtml}</article>`;
 }
 
+function decisionDetailUnavailableTextFinal(){
+  return '<article class="decision-point-card decision-text-card decision-description-unavailable"><h3>Ärendebeskrivning</h3><p>Ingen separat ärendebeskrivning finns i den maskinläsbara protokollsutvinningen. Övriga tillgängliga protokollavsnitt visas nedan; använd källänken ovan för att läsa originalprotokollet.</p></article>';
+}
+
+function decisionMeetingContextHtmlFinal(proposal){
+  const meeting=decisionMeetingRowFor(proposal);
+  if(!meeting)return '';
+  return `<section class="meeting-context"><span>Sammanträde</span><button type="button" data-open-meeting data-id="${esc(meeting.id)}" data-proposal-key="${esc(decisionProposalKey(meeting))}">${esc([meeting.body,meeting.date].filter(Boolean).join(' · '))}</button></section>`;
+}
+
+function decisionAttendancePanelHtmlFinal(proposal){
+  const attendance=decisionMeetingAttendanceHtml(proposal);
+  return attendance.includes('meeting-attendance-empty')?'':`<section class="meeting-attendance-panel">${attendance}</section>`;
+}
+
+function decisionBindCanonicalDetailLinksFinal(){
+  const groups=$('decisionDetailGroups');
+  if(!groups)return;
+  groups.querySelectorAll('.decision-text-ref').forEach(button=>{
+    button.onclick=event=>{
+      event.preventDefault();
+      event.stopPropagation();
+      openDecisionDetail(button.dataset.id,button.dataset.proposalKey);
+    };
+  });
+  groups.querySelectorAll('[data-open-meeting]').forEach(button=>{
+    button.onclick=event=>{
+      event.preventDefault();
+      openDecisionDetail(button.dataset.id,button.dataset.proposalKey);
+    };
+  });
+}
+
+function renderCanonicalMeetingDetailFinal(meeting){
+  const source=decisionProtocolFirstPageUrlFinal(meeting),protocolDiary=decisionProtocolDiaryNumberFinal(meeting);
+  $('decisionDetailTitle').textContent=`Sammanträde · ${meeting.body} · ${meeting.date}`;
+  $('decisionDetailMeta').innerHTML=`<span>${esc([meeting.documentTitle||'Protokoll',protocolDiary].filter(Boolean).join(' · '))}</span>${source?` <a class="decision-official-link" href="${esc(source)}" target="_blank" rel="noopener noreferrer">Öppna hela protokollet</a>`:''}`;
+  $('decisionDetailOverview').innerHTML=[
+    `<div class="decision-hierarchy"><div class="decision-hierarchy-item primary"><span>Sammanträde</span><strong>${esc(meeting.body)}</strong><small>${esc(meeting.date)}</small></div></div>`,
+    `<div class="card"><span>Beslutspunkter</span><b>${esc(fmtInt(meeting.meetingDecisionCount||0))}</b></div>`,
+    `<div class="card"><span>Ärenden</span><b>${esc(fmtInt(meeting.meetingMatterCount||0))}</b></div>`
+  ].join('');
+  $('decisionDetailStatus').textContent=`Hela protokollet. ${fmtInt(meeting.meetingDecisionCount||0)} beslutspunkter har registrerats för sammanträdet.`;
+  $('decisionPage').textContent='';
+  $('decisionDetailGroups').innerHTML=[
+    `<article class="decision-point-card meeting-protocol-card"><h3>Protokoll</h3><p>${esc(meeting.documentTitle||'Hela protokollet för sammanträdet.')}</p>${source?`<a href="${esc(source)}" target="_blank" rel="noopener noreferrer">Öppna hela protokollet</a>`:''}</article>`,
+    decisionAttendancePanelHtmlFinal(meeting)
+  ].join('');
+  $('decisionMasterPane').hidden=true;
+  $('decisionDetailPane').hidden=false;
+}
+
 const renderDecisionDetailViewBeforeCanonicalItemFinal=renderDecisionDetailView;
 renderDecisionDetailView=function(tab){
   if(tab?.kind==='activity')return renderDecisionDetailViewBeforeCanonicalItemFinal(tab);
@@ -2945,6 +3000,10 @@ renderDecisionDetailView=function(tab){
   const proposal=payload.proposal;
   if(!proposal){
     return renderDecisionDetailViewBeforeCanonicalItemFinal(tab);
+  }
+  if(proposal.isMeeting){
+    renderCanonicalMeetingDetailFinal(proposal);
+    return;
   }
   const rows=payload.rows||[];
   $('decisionDetailTitle').textContent=proposal.pointTitle||tab?.title||payload.decision.title||'Ärende';
@@ -2959,7 +3018,10 @@ renderDecisionDetailView=function(tab){
   const textHtml=decisionDetailTextHtml(proposal);
   const voteHtml=pointGroups.length?pointGroups.map((group,index)=>decisionPointPartyHtmlCanonicalFinal(group,index,pointGroups.length,proposal)).join(''):'<div class="decision-vote-panel">Denna beslutspunkt saknar formell votering.</div>';
   const extractionNotice=proposal.extractionStatus==='decision_not_extracted'?'<article class="decision-point-card decision-extraction-notice"><h3>Beslut</h3><p>Ingen formell beslutsrubrik kunde extraheras ur källprotokollet. Ärendet visas ändå med sin källa och övriga protokolluppgifter.</p></article>':'';
-  $('decisionDetailGroups').innerHTML=extractionNotice+textHtml+voteHtml;
+  const descriptionUnavailable=!String(proposal.abstractText||proposal.description||'').trim();
+  const textContent=(descriptionUnavailable?decisionDetailUnavailableTextFinal():'')+textHtml;
+  $('decisionDetailGroups').innerHTML=extractionNotice+(textContent||decisionDetailUnavailableTextFinal())+decisionMeetingContextHtmlFinal(proposal)+voteHtml+decisionAttendancePanelHtmlFinal(proposal);
+  decisionBindCanonicalDetailLinksFinal();
   $('decisionMasterPane').hidden=true;
   $('decisionDetailPane').hidden=false;
 };

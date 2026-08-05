@@ -1185,6 +1185,7 @@ ensureDecisionDataProgressively=function(){
     await decisionApplyMeetingRollupsCooperativelyFinal(job);
     decisionUpdateInitialProgressFinal(86);
     decisionPack._cooperativePreparationReadyFinal=true;
+    if(typeof decisionBuildRuntimeIndexesFinal==='function')decisionBuildRuntimeIndexesFinal();
     decisionScheduleSearchWarmFinal();
   })().finally(()=>{decisionCooperativePreparationPromiseFinal=null;});
   return decisionCooperativePreparationPromiseFinal;
@@ -1625,10 +1626,13 @@ function decisionIndexedRowForElementFinal(element){
 function decisionShowIndexedDetailFinal(element){
   const row=decisionIndexedRowForElementFinal(element)||{},id=element?.dataset.id||row.id||'',proposalKey=element?.dataset.proposalKey||decisionProposalKey(row);
   const title=String(row.protocolHeader||row.pointTitle||row.title||'Kommunalt ärende').replace(/\s+/g,' ').trim();
+  const proposalData=row.id?decisionProposalTabData(row):{proposalKey};
   let tabIndex=decisionTabs.findIndex(tab=>tab.kind==='decision'&&tab.id===id&&String(tab.proposalKey||'')===proposalKey);
   if(tabIndex<0){
-    decisionTabs.push({kind:'decision',id,proposalKey,title,page:0});
+    decisionTabs.push({kind:'decision',id,...proposalData,proposalKey,title,page:0,pendingCanonical:true});
     tabIndex=decisionTabs.length-1;
+  }else{
+    Object.assign(decisionTabs[tabIndex],proposalData,{title,pendingCanonical:true});
   }
   decisionActiveTab=tabIndex;
   renderDecisionTabs();
@@ -1648,6 +1652,7 @@ function decisionShowIndexedDetailFinal(element){
   $('decisionMasterPane').hidden=true;
   $('decisionDetailPane').hidden=false;
   syncDecisionListDetailChromeFinal();
+  return decisionTabs[tabIndex];
 }
 
 function decisionOpenStableRowFinal(element){
@@ -1656,11 +1661,19 @@ function decisionOpenStableRowFinal(element){
     openDecisionDetail(element.dataset.id,element.dataset.proposalKey);
     return;
   }
-  const id=element.dataset.id,proposalKey=element.dataset.proposalKey;
-  decisionShowIndexedDetailFinal(element);
+  const proposalKey=element.dataset.proposalKey;
+  const pendingTab=decisionShowIndexedDetailFinal(element);
   decisionRequestCanonicalDetailsFinal();
-  ensureDecisionCanonicalDataFinal().then(()=>openDecisionDetail(id,proposalKey)).catch(error=>{
-    if(decisionActiveTabState()?.id!==id)return;
+  ensureDecisionCanonicalDataFinal().then(()=>{
+    const tabIndex=decisionTabs.indexOf(pendingTab);
+    if(tabIndex<0)return;
+    const proposal=decisionProposalRowByKeyAnyFinal(proposalKey);
+    if(proposal)Object.assign(pendingTab,decisionProposalTabData(proposal),{title:decisionTabTitleFor(proposal),pendingCanonical:false});
+    else pendingTab.pendingCanonical=false;
+    if(currentTopView()==='decision')renderDecisionTabs();
+    if(decisionActiveTabState()===pendingTab&&currentTopView()==='decision'&&!$('decisionDetailPane')?.hidden)renderDecisionView();
+  }).catch(error=>{
+    if(decisionActiveTabState()!==pendingTab)return;
     $('decisionDetailStatus').textContent=`Den detaljerade voteringsinformationen kunde inte laddas: ${error?.message||'okänt fel'}`;
   });
 }

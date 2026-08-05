@@ -280,7 +280,8 @@ decisionProposalRowByKeyAnyFinal=function(key){
   const text=String(key||'');
   const rows=filteredDecisionPointRows();
   const row=decisionFilteredPointCacheFinal?.proposalByKey.get(text)||
-    decisionRuntimeIndexesFinal?.proposalByKey.get(text)||null;
+    decisionRuntimeIndexesFinal?.proposalByKey.get(text)||
+    decisionAllPointRows.find(candidate=>decisionProposalKey(candidate)===text)||null;
   return decisionHydrateTextFieldsFinal(row);
 };
 decisionProposalRowByKey=function(key){return decisionProposalRowByKeyAnyFinal(key);};

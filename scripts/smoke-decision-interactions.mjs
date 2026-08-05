@@ -7,6 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+const deepAudit=process.argv.includes('--deep');
 const chromePath=process.env.CHROME_PATH||'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const mime=new Map([['.html','text/html; charset=utf-8'],['.js','text/javascript; charset=utf-8'],['.css','text/css; charset=utf-8'],['.gz','application/gzip']]);
 const server=http.createServer((request,response)=>{
@@ -76,17 +77,96 @@ try{
     input.value='skola';input.dispatchEvent(new Event('input',{bubbles:true}));
     for(let attempt=0;attempt<800&&!(decisionProgressiveSearchStateFinal?.key==='skola'&&decisionProgressiveSearchStateFinal?.finished);attempt++)await wait(20);
     const searchFinished=decisionProgressiveSearchStateFinal?.key==='skola'&&decisionProgressiveSearchStateFinal?.finished;
-    const clicked=document.querySelector('#decisionBody tr');
+    const auditKey='case_body_kommunfullmaktige_2024_05_14_123|p|123';
+    const auditRow=decisionTableIndexRowsFinal.find(row=>decisionProposalKey(row)===auditKey);
+    const clicked=${deepAudit?'true':'false'}?{dataset:{id:auditRow?.id||'',proposalKey:auditKey},children:[null,null,{dispatchEvent(event){return this.parent.dispatchEvent(event);},parent:null}],dispatchEvent(event){decisionOpenStableRowFinal(this);return true;}}:document.querySelector('#decisionBody tr');
+    if(clicked?.children?.[2]&&${deepAudit?'true':'false'})clicked.children[2].parent=clicked;
     const clickKey=clicked?.dataset.proposalKey||'';
     const clickStarted=performance.now();
     clicked?.children[2]?.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}));
     await new Promise(resolve=>requestAnimationFrame(resolve));
     const clickMs=performance.now()-clickStarted;
     const detailOpened=!document.querySelector('#decisionDetailPane')?.hidden;
-    return {clickKey,clickMs,detailOpened,searchFinished,errors,geometryChanges,samples};
+    let deep=null;
+    if(${deepAudit?'true':'false'}){
+      const indexedHeadings=[...document.querySelectorAll('#decisionDetailGroups h3')].map(node=>node.textContent.trim());
+      decisionActiveTab=0;renderDecisionView();
+      const canonicalStarted=performance.now();
+      await ensureDecisionCanonicalDataFinal();
+      await wait(50);
+      const canonicalMs=performance.now()-canonicalStarted;
+      const delayedActiveKind=decisionActiveTabState()?.kind||'';
+      const tabIndex=decisionTabs.findIndex(tab=>tab.proposalKey===auditKey);
+      const hydratedTab=tabIndex>=0?decisionTabs[tabIndex]:null;
+      if(tabIndex>=0){decisionActiveTab=tabIndex;renderDecisionView();}
+      const payload=hydratedTab?decisionDetailPayload(hydratedTab):null;
+      const proposal=payload?.proposal||null;
+      const sourceDoc=proposal?(decisionPack?.d||[])[proposal.docIndex]||{}:{};
+      const finalHeadings=[...document.querySelectorAll('#decisionDetailGroups h3')].map(node=>node.textContent.trim());
+      const descriptionText=document.querySelector('#decisionDetailGroups .decision-text-card')?.textContent.trim().slice(0,300)||'';
+      const meetingLinkFound=!!document.querySelector('#decisionDetailGroups [data-open-meeting]');
+      const attendanceFound=!!document.querySelector('#decisionDetailGroups .meeting-attendance-panel');
+      const voteSections=[...document.querySelectorAll('#decisionDetailGroups .decision-vote-type')];
+      const yesSection=voteSections.find(section=>section.querySelector('h4')?.textContent.trim().startsWith('Ja'))||null;
+      const noSection=voteSections.find(section=>section.querySelector('h4')?.textContent.trim().startsWith('Nej'))||null;
+      const voteLayout={partyCards:yesSection?.querySelectorAll('.decision-point-party').length||0,yesBottom:yesSection?Math.round(yesSection.getBoundingClientRect().bottom):0,noTop:noSection?Math.round(noSection.getBoundingClientRect().top):0};
+      const reference=[...document.querySelectorAll('#decisionDetailGroups .decision-text-ref')].find(node=>node.textContent.includes('7 maj 2024'))||null;
+      const originalTabIndex=decisionActiveTab;
+      const beforeReferenceTab=decisionActiveTab;
+      reference?.click();
+      const afterReferenceTab=decisionActiveTab;
+      const referenceTargetTab=decisionActiveTabState();
+      const referenceTargetProposal=referenceTargetTab?.kind==='decision'?decisionDetailPayload(referenceTargetTab)?.proposal:null;
+      decisionActiveTab=originalTabIndex;renderDecisionView();
+      const meetingButton=document.querySelector('#decisionDetailGroups [data-open-meeting]');
+      meetingButton?.click();
+      const meetingTargetTab=decisionActiveTabState();
+      const meetingTargetProposal=meetingTargetTab?.kind==='decision'?decisionDetailPayload(meetingTargetTab)?.proposal:null;
+      const meetingView={
+        isMeeting:!!meetingTargetProposal?.isMeeting,
+        title:document.querySelector('#decisionDetailTitle')?.textContent||'',
+        protocolCard:!!document.querySelector('#decisionDetailGroups .meeting-protocol-card'),
+        attendance:!!document.querySelector('#decisionDetailGroups .meeting-attendance-panel'),
+        meta:document.querySelector('#decisionDetailMeta')?.textContent||''
+      };
+      const missingRow=decisionAllPointRows.find(row=>{
+        if(row.isMeeting)return false;
+        const doc=(decisionPack?.d||[])[row.docIndex]||{};
+        return !String(row.abstractText||doc.ad||'').trim()&&!String(row.description||'').trim()&&!String(row.fullDecisionText||doc.bd||'').trim()&&!String(doc.pd||'').trim()&&!String(doc.yd||'').trim();
+      })||null;
+      if(missingRow)openDecisionDetail(missingRow.id,decisionProposalKey(missingRow));
+      const missingDescriptionFallback=!!document.querySelector('#decisionDetailGroups .decision-description-unavailable');
+      deep={
+        canonicalMs,delayedActiveKind,indexedHeadings,finalHeadings,
+        hydratedTab:hydratedTab?{point:hydratedTab.point||'',sourcePoint:hydratedTab.sourcePoint||'',sourcePoints:hydratedTab.sourcePoints||[]}:null,
+        canonicalKeyMatches:decisionAllPointRows.filter(row=>decisionProposalKey(row)===auditKey).length,
+        canonicalIdPoints:decisionAllPointRows.filter(row=>row.id==='case_body_kommunfullmaktige_2024_05_14_123').map(row=>String(row.point)).slice(0,20),
+        runtimeKeyMatch:!!decisionRuntimeIndexesFinal?.proposalByKey?.get(auditKey),
+        proposalFields:proposal?{docIndex:proposal.docIndex,abstractLength:String(proposal.abstractText||'').length,descriptionLength:String(proposal.description||'').length,decisionLength:String(proposal.fullDecisionText||'').length,docAbstractLength:String(sourceDoc.ad||'').length,docDecisionLength:String(sourceDoc.bd||'').length,textHtmlLength:String(decisionDetailTextHtml(proposal)||'').length,rowCount:payload?.rows?.length||0}:null,
+        descriptionText,voteLayout,
+        referenceFound:!!reference,referenceOpened:afterReferenceTab!==beforeReferenceTab,
+        referenceTarget:referenceTargetProposal?{date:referenceTargetProposal.date,body:referenceTargetProposal.body,point:String(referenceTargetProposal.point)}:null,
+        meetingLinkFound,attendanceFound,meetingView,
+        missingDescriptionKey:missingRow?decisionProposalKey(missingRow):'',missingDescriptionFallback
+      };
+    }
+    return {clickKey,clickMs,detailOpened,searchFinished,errors,geometryChanges,samples,deep};
   })()`);
   console.log(JSON.stringify(result,null,2));
   if(!result.detailOpened||!result.searchFinished||result.errors.length||result.geometryChanges)process.exitCode=1;
+  if(deepAudit&&(
+    result.deep?.delayedActiveKind!=='list'||
+    result.deep?.hydratedTab?.sourcePoints?.[0]!=='123'||
+    !result.deep?.proposalFields?.abstractLength||
+    !result.deep?.descriptionText||
+    !result.deep?.referenceFound||!result.deep?.referenceOpened||
+    result.deep?.referenceTarget?.date!=='2024-05-07'||
+    !result.deep?.meetingLinkFound||!result.deep?.attendanceFound||
+    !result.deep?.meetingView?.isMeeting||!result.deep?.meetingView?.protocolCard||!result.deep?.meetingView?.attendance||
+    !result.deep?.missingDescriptionKey||!result.deep?.missingDescriptionFallback||
+    result.deep?.voteLayout?.partyCards!==8||
+    result.deep?.voteLayout?.noTop-result.deep?.voteLayout?.yesBottom>30
+  ))process.exitCode=1;
 }finally{
   cdp?.close();chrome.kill();server.close();
   await new Promise(resolve=>setTimeout(resolve,500));

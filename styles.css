@@ -2683,18 +2683,22 @@ td.num{
 }
 
 .decision-point-party-list{
-  display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(185px,1fr));
-  align-items:start;
-  gap:8px;
+  display:block;
+  columns:185px;
+  column-gap:8px;
 }
 
 .decision-point-party{
+  display:inline-block;
+  width:100%;
+  margin:0 0 8px;
   padding:9px 10px;
   border:1px solid var(--line);
   border-radius:var(--radius-sm);
   background:var(--cream-raised);
   min-width:0;
+  vertical-align:top;
+  break-inside:avoid;
 }
 
 .decision-point-party h5{
@@ -2922,7 +2926,7 @@ td.num{
   }
 
   .decision-point-party-list{
-    grid-template-columns:1fr;
+    columns:1;
   }
 
   .decision-point-votes ul{
