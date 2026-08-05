@@ -297,6 +297,12 @@ const may14Rows=[];
 for(let index=0;index<pack.mr.length;index+=6)if(`${pack.mr[index]}|${pack.mr[index+1]}|${pack.mr[index+2]}`===may14AttendanceKey)may14Rows.push({name:String(pack.mr[index+3]||''),party:String(pack.mr[index+4]||''),role:String(pack.mr[index+5]||'')});
 if(may14Rows.length!==82)addIssue('page_boundary_attendance_regression',{key:may14AttendanceKey,expected:82,actual:may14Rows.length});
 if(may14Rows.some(row=>row.name==='Muhammed'))addIssue('page_boundary_attendance_fragment',{key:may14AttendanceKey,name:'Muhammed'});
+const may14RoleCounts=may14Rows.reduce((counts,row)=>(counts[row.role]=(counts[row.role]||0)+1,counts),{});
+for(const [role,expected] of [['ledamot',56],['tjänstgörande ersättare',17],['ersättare',9]]){
+  const actual=may14RoleCounts[role]||0;
+  if(actual!==expected)addIssue('page_boundary_attendance_role_regression',{key:may14AttendanceKey,role,expected,actual});
+}
+if(Object.keys(may14RoleCounts).some(role=>!['ledamot','tjänstgörande ersättare','ersättare'].includes(role)))addIssue('page_boundary_attendance_unclassified_role',{key:may14AttendanceKey,roles:may14RoleCounts});
 
 let meetingRows = 0;
 for (const row of runtimeRows) {
@@ -562,7 +568,10 @@ const hardFailures = [
   'duplicate_or_missing_document_id', 'invalid_document_date', 'document_title_date_mismatch',
   'invalid_source_url', 'non_official_source_url', 'missing_point_metadata',
   'duplicate_decision_point_id', 'runtime_row_invalid_document', 'runtime_field_mismatch',
-  'meeting_protocol_diary_mismatch', 'empty_decision_point', 'extraction_boilerplate'
+  'meeting_protocol_diary_mismatch', 'empty_decision_point', 'extraction_boilerplate',
+  'named_voter_missing_from_attendance', 'page_boundary_attendance_regression',
+  'page_boundary_attendance_fragment', 'page_boundary_attendance_role_regression',
+  'page_boundary_attendance_unclassified_role'
 ].reduce((total, category) => total + (issues.get(category)?.count || 0), 0);
 const sourceFailures = checkSourceText && remote.sourceText
   ? remote.sourceText.dateMismatches.length + remote.sourceText.diaryMismatches.length

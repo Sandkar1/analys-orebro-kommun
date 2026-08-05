@@ -5,15 +5,23 @@ let sessionResolver=null,sessionKeyHandler=null,sessionLastFocus=null,decisionVi
 const decisionSearchReloadStorageKey='municipal-decision-search-reload-v1';
 function persistDecisionSearchForReload(value){
   try{
-    window.sessionStorage?.setItem(decisionSearchReloadStorageKey,JSON.stringify({path:`${location.pathname}${location.search}`,hash:location.hash,value:String(value||'')}));
+    window.sessionStorage?.setItem(decisionSearchReloadStorageKey,JSON.stringify({path:`${location.pathname}${location.search}`,value:String(value||'')}));
   }catch{}
+}
+function decisionNavigationIsReload(){
+  const navigation=performance.getEntriesByType?.('navigation')?.[0];
+  if(navigation)return navigation.type==='reload';
+  if(typeof performance.navigation?.type==='number')return performance.navigation.type===1;
+  return true;
 }
 function restoreDecisionSearchAfterReload(){
   try{
     const record=JSON.parse(window.sessionStorage?.getItem(decisionSearchReloadStorageKey)||'null');
-    if(!record||record.path!==`${location.pathname}${location.search}`||record.hash!==location.hash)return false;
+    if(!decisionNavigationIsReload()||!record||record.path!==`${location.pathname}${location.search}`)return false;
     decisionSearchQuery=String(record.value||'');
     syncDecisionSearchControl();
+    const input=$('decisionDecisionSearch');
+    if(input)input.dataset.reloadRestored='true';
     return true;
   }catch{return false;}
 }

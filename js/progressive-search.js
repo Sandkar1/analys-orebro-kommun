@@ -3,7 +3,7 @@ const progressiveSearchJobsFinal=new Map();
 const progressiveSearchHandlersFinal=new Map();
 const scheduleTableSearchBeforeProgressiveFinal=scheduleTableSearch;
 
-const municipalDataWorkerSrcFinal='js/municipal-data-loader-worker.js?v=20260806-2';
+const municipalDataWorkerSrcFinal='js/municipal-data-loader-worker.js?v=20260806-4';
 const municipalProtocolPackByteSizesFinal=[29624019];
 function progressiveCreateDataWorkerFinal(){
   if(typeof Worker!=='function'||window.location.protocol==='file:')return null;
@@ -34,7 +34,7 @@ async function decisionAssembleWorkerPartsFinal(parts){
   decisionUpdateInitialProgressFinal(49);
   await yieldUi();synchronizeMunicipalProtocolTitles(documents);decisionUpdateInitialProgressFinal(49.5);
   await yieldUi();pruneUnmatchedMunicipalAttendanceRows(documents,memberRows);decisionUpdateInitialProgressFinal(50);
-  await yieldUi();repairMunicipalPageBoundaryAttendance(documents,voteRows,memberRows);decisionUpdateInitialProgressFinal(50.2);
+  await yieldUi();repairMunicipalPageBoundaryAttendance(documents,voteRows,memberRows);applyMunicipalAttendanceSourceRoleCorrections(memberRows);decisionUpdateInitialProgressFinal(50.2);
   await yieldUi();disambiguateMunicipalProtocolDocumentIds(documents);decisionUpdateInitialProgressFinal(50.4);
   await yieldUi();disambiguateMunicipalDecisionPointIds(documents);decisionUpdateInitialProgressFinal(50.8);
   await yieldUi();repairMunicipalVoteEvents(documents,voteRows);decisionUpdateInitialProgressFinal(51.2);
@@ -157,9 +157,9 @@ let decisionInitialLoadCompleteFinal=false;
 let rawInitialLoadCompleteFinal=false;
 let decisionActivityInitialLoadCompleteFinal=false;
 
-const municipalDecisionTableIndexSrcFinal='data/municipal-decision-table-index.ndjson.gz?v=20260806-2';
+const municipalDecisionTableIndexSrcFinal='data/municipal-decision-table-index.ndjson.gz?v=20260806-4';
 const municipalDecisionTableIndexPartsBaseFinal='data/municipal-decision-table-index-parts';
-const municipalDecisionMeetingDetailsSrcFinal='data/municipal-decision-meeting-details.js?v=20260806-2';
+const municipalDecisionMeetingDetailsSrcFinal='data/municipal-decision-meeting-details.js?v=20260806-4';
 const decisionTableIndexBootstrapFinal=window.municipalDecisionTableBootstrap||{total:0,rows:[]};
 const decisionTableIndexRowsFinal=[...(decisionTableIndexBootstrapFinal.rows||[])];
 const decisionTableIndexBootstrapCountFinal=decisionTableIndexRowsFinal.length;
@@ -245,7 +245,7 @@ async function decisionReadTableIndexStreamFinal(stream){
 
 function decisionReadTableIndexFileProgressivelyFinal(){
   return (async()=>{
-    const partCount=Math.max(0,Number(decisionTableIndexBootstrapFinal.partCount)||0),version=decisionTableIndexBootstrapFinal.version||'20260806-2';
+    const partCount=Math.max(0,Number(decisionTableIndexBootstrapFinal.partCount)||0),version=decisionTableIndexBootstrapFinal.version||'20260806-4';
     if(!partCount)throw Error('Tabellindexets lokala delar saknas.');
     await loadScriptOnce(municipalDecisionMeetingDetailsSrcFinal);
     const meetingDetails=window.municipalDecisionMeetingDetails||JSON.parse(await decodeHistoricPackText(window.municipalDecisionMeetingDetailsCompressed||''));
@@ -1668,7 +1668,7 @@ async function decisionLoadIndexedDetailPartFinal(part,proposalKey){
   if(!decisionIndexedDetailPartPromisesFinal.has(partNumber)){
     decisionIndexedDetailPartPromisesFinal.set(partNumber,(async()=>{
       const partName=String(partNumber).padStart(3,'0');
-      const version=decisionTableIndexBootstrapFinal.version||'20260806-2';
+      const version=decisionTableIndexBootstrapFinal.version||'20260806-4';
       await loadScriptOnce(`${municipalDecisionTableIndexPartsBaseFinal}/part-${partName}.js?v=${version}`);
       const columns=decisionTableIndexBootstrapFinal.fields||[];
       const rows=window.municipalDecisionTableIndexParts?.[partNumber]||JSON.parse(await decodeHistoricPackText(window.municipalDecisionTableIndexCompressedParts?.[partNumber]||''));
@@ -1732,7 +1732,7 @@ function decisionRenderIndexedFastDetailFinal(row,tab){
   $('decisionDetailOverview').innerHTML=detail.overviewHtml||'';
   $('decisionDetailStatus').textContent=detail.status||'';
   const meeting=decisionIndexedMeetingDetailsFinal.get(detail.meetingKey)||null;
-  const attendance=!detail.isMeeting&&meeting?.attendanceHtml?meeting.attendanceHtml:'';
+  const attendance=!detail.isMeeting&&meeting?.attendanceHtml?decisionAttendancePanelHtmlFinal(row,meeting.attendanceHtml):'';
   $('decisionDetailGroups').innerHTML=(detail.groupsHtml||decisionDetailUnavailableTextFinal())+attendance;
   $('decisionPage').textContent='';
   $('decisionPrev').disabled=true;

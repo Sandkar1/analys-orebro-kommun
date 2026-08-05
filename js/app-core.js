@@ -239,6 +239,26 @@ function repairMunicipalPageBoundaryAttendance(documents,voteRows,memberRows){
     identitiesByProtocol.get(key).add(identity);
   }
 }
+function applyMunicipalAttendanceSourceRoleCorrections(memberRows){
+  /* In the 2024-05-14 Kommunfullmäktige protocol, "Närvarande
+     ledamöter" continues onto page 2 without repeating its heading. These
+     twenty names were restored from the named roll call above; the source PDF
+     establishes that their role is ledamot, not an unspecified vote-derived
+     attendance role. Keep the correction source-specific and name-specific. */
+  const protocolKey='2024-05-14|Kommunfullmäktige|2024-05-14 Kommunfullmäktige.pdf';
+  const continuedCouncillors=new Set([
+    'Carola Sunesson','Daniel Spiik','Bo Ammer','David Larsson','Sunil Jayasooriya',
+    'Jaber Fawaz','Cristian Rehn Janowicz','Elisabeth Nilesol','Karolina Wallström',
+    'Patrik Jämtvall','Willhelm Sundman','Johanna Reimfelt','Mats-Olof Liljegren',
+    'Markus Allard','Peter Springare','Anna Lundberg','Tuomo Jänkälä',
+    'Susanne Lindholm Henningsson','Anna Andersson','Lea Strandberg'
+  ].map(municipalAttendanceIdentity));
+  for(let index=0;index<memberRows.length;index+=6){
+    const key=[memberRows[index],memberRows[index+1],memberRows[index+2]].map(value=>String(value||'')).join('|');
+    if(key!==protocolKey||!continuedCouncillors.has(municipalAttendanceIdentity(memberRows[index+3])))continue;
+    memberRows[index+5]='ledamot';
+  }
+}
 function disambiguateMunicipalProtocolDocumentIds(documents){
   const seen=new Set();
   for(let index=0;index<documents.length;index++){
@@ -361,6 +381,7 @@ function assembleMunicipalProtocolPackParts(){
   synchronizeMunicipalProtocolTitles(documents);
   pruneUnmatchedMunicipalAttendanceRows(documents,memberRows);
   repairMunicipalPageBoundaryAttendance(documents,voteRows,memberRows);
+  applyMunicipalAttendanceSourceRoleCorrections(memberRows);
   disambiguateMunicipalProtocolDocumentIds(documents);
   disambiguateMunicipalDecisionPointIds(documents);
   repairMunicipalVoteEvents(documents,voteRows);

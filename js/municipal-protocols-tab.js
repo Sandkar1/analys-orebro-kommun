@@ -1969,11 +1969,29 @@ function decisionMeetingAttendanceHtml(meeting){
     .values()]
     .sort((a,b)=>String(a.name).localeCompare(String(b.name),'sv',{sensitivity:'base'}));
   if(!members.length)return '<span class="meeting-attendance-empty">Närvaro saknas i protokollet.</span>';
-  const names=members.map(member=>{
-    const meta=[member.party?`(${decisionDisplay('party',member.party)})`:'',member.role].filter(Boolean).join(' · ');
-    return `<li><strong>${esc(member.name)}</strong>${meta?` <span>${esc(meta)}</span>`:''}</li>`;
+  const roleGroup=member=>{
+    const role=String(member.role||'').toLocaleLowerCase('sv');
+    if(role.includes('tjänstgörande')&&role.includes('ersättare'))return {key:'serving-substitutes',label:'Tjänstgörande ersättare'};
+    if(role.includes('ersättare'))return {key:'substitutes',label:'Närvarande ersättare'};
+    if(role.includes('ledamot'))return {key:'councillors',label:'Närvarande ledamöter'};
+    return {key:'verified',label:'Övrig verifierad närvaro'};
+  };
+  const groupOrder=['councillors','serving-substitutes','substitutes','verified'],groups=new Map();
+  for(const member of members){
+    const group=roleGroup(member);
+    if(!groups.has(group.key))groups.set(group.key,{...group,members:[]});
+    groups.get(group.key).members.push(member);
+  }
+  const orderedGroups=groupOrder.map(key=>groups.get(key)).filter(Boolean);
+  const breakdown=orderedGroups.map(group=>`<span><b>${fmtInt(group.members.length)}</b> ${esc(group.label.toLocaleLowerCase('sv'))}</span>`).join('');
+  const groupHtml=orderedGroups.map(group=>{
+    const names=group.members.map(member=>{
+      const party=member.party?`(${decisionDisplay('party',member.party)})`:'';
+      return `<li><strong>${esc(member.name)}</strong>${party?` <span>${esc(party)}</span>`:''}</li>`;
+    }).join('');
+    return `<section class="meeting-attendance-group" data-attendance-role="${esc(group.key)}"><h4>${esc(group.label)} <b>${fmtInt(group.members.length)}</b></h4><ul>${names}</ul></section>`;
   }).join('');
-  return `<section class="meeting-attendance"><h3>Närvaro <b>${fmtInt(members.length)}</b></h3><ul>${names}</ul></section>`;
+  return `<section class="meeting-attendance"><h3>Mötesnärvaro enligt hela protokollet <b>${fmtInt(members.length)}</b></h3><p class="meeting-attendance-explanation">Detta är inte antalet deltagare i varje enskilt ärende. Siffran omfattar alla som protokollet listar som ledamot eller ersättare någon gång under sammanträdet; sammansättningen kan ha ändrats mellan paragraferna.</p><div class="meeting-attendance-breakdown">${breakdown}</div><details><summary>Visa namn och roller</summary><div class="meeting-attendance-groups">${groupHtml}</div></details></section>`;
 }
 
 const renderDecisionDetailViewBeforeMeetingDetail=renderDecisionDetailView;
@@ -1982,8 +2000,8 @@ renderDecisionDetailView=function(tab){
   const meeting=decisionProposalRowByKeyAnyFinal(tab?.proposalKey);
   if(!meeting)return;
   if(!meeting.isMeeting){
-    const attendance=decisionMeetingAttendanceHtml(meeting);
-    if(!attendance.includes('meeting-attendance-empty'))$('decisionDetailGroups').insertAdjacentHTML('beforeend',`<section class="meeting-attendance-panel">${attendance}</section>`);
+    const attendance=decisionAttendancePanelHtmlFinal(meeting);
+    if(attendance)$('decisionDetailGroups').insertAdjacentHTML('beforeend',attendance);
     return;
   }
   const source=decisionProtocolFirstPageUrlFinal(meeting);
@@ -1998,7 +2016,7 @@ renderDecisionDetailView=function(tab){
   $('decisionDetailStatus').textContent=`Hela protokollet. ${fmtInt(meeting.meetingDecisionCount||0)} beslutspunkter har registrerats för sammanträdet.`;
   $('decisionDetailGroups').innerHTML=[
     `<article class="decision-point-card meeting-protocol-card"><h3>Protokoll</h3><p>${esc(meeting.documentTitle||'Hela protokollet för sammanträdet.')}</p>${source?`<a href="${esc(source)}" target="_blank" rel="noopener noreferrer">Öppna hela protokollet</a>`:''}</article>`,
-    `<section class="meeting-attendance-panel">${decisionMeetingAttendanceHtml(meeting)}</section>`
+    decisionAttendancePanelHtmlFinal(meeting)
   ].join('');
 };
 
@@ -2961,9 +2979,25 @@ function decisionSetDetailMeetingContextFinal(meeting,onOpen=null){
   });
 }
 
-function decisionAttendancePanelHtmlFinal(proposal){
+function decisionItemVoteParticipationHtmlFinal(proposal){
+  if(!proposal||proposal.isMeeting)return '';
+  const rounds=Number(proposal.fullVoteRoundCount||proposal.voteRoundCount||0);
+  if(rounds!==1)return '';
+  const count=(fullField,field)=>Number(proposal[fullField]??proposal[field]??0)||0;
+  const yes=count('fullYes','yes'),no=count('fullNo','no'),abstain=count('fullAbstain','abstain'),total=yes+no+abstain;
+  if(!total)return '';
+  const result=[yes?`${fmtInt(yes)} ja`:'',no?`${fmtInt(no)} nej`:'',abstain?`${fmtInt(abstain)} avstod`:''].filter(Boolean).join(', ');
+  return `<p class="meeting-attendance-item-note"><strong>Detta ärende:</strong> ${fmtInt(total)} personer deltog i den formella voteringen (${esc(result)}).</p>`;
+}
+
+function decisionAttendancePanelHtmlFinal(proposal,sharedPanelHtml=''){
+  const note=decisionItemVoteParticipationHtmlFinal(proposal);
+  if(sharedPanelHtml){
+    if(!note)return sharedPanelHtml;
+    return String(sharedPanelHtml).replace('<section class="meeting-attendance-panel">',`<section class="meeting-attendance-panel">${note}`);
+  }
   const attendance=decisionMeetingAttendanceHtml(proposal);
-  return attendance.includes('meeting-attendance-empty')?'':`<section class="meeting-attendance-panel">${attendance}</section>`;
+  return attendance.includes('meeting-attendance-empty')?'':`<section class="meeting-attendance-panel">${note}${attendance}</section>`;
 }
 
 function decisionBindCanonicalDetailLinksFinal(){

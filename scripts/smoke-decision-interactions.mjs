@@ -115,10 +115,12 @@ try{
         canonicalReady:decisionCanonicalPreparationReadyFinal(),
         hasFastDetail:!!auditRow?.fastDetail,
         pendingCanonical:!!decisionActiveTabState()?.pendingCanonical,
-        completeHeadings:['Ärendebeskrivning','Beslutsunderlag','Förslag till beslut','Yrkanden','Proposition','Beslut','Votering','Närvaro'].every(heading=>indexedHeadings.some(value=>value.startsWith(heading))),
+        completeHeadings:['Ärendebeskrivning','Beslutsunderlag','Förslag till beslut','Yrkanden','Proposition','Beslut','Votering','Mötesnärvaro'].every(heading=>indexedHeadings.some(value=>value.startsWith(heading))),
         reference:!!document.querySelector('#decisionDetailGroups .decision-text-ref'),
         attendance:!!document.querySelector('#decisionDetailGroups .meeting-attendance-panel'),
         attendanceCount:Number(document.querySelector('#decisionDetailGroups .meeting-attendance h3 b')?.textContent||0),
+        attendanceRoles:Object.fromEntries([...document.querySelectorAll('#decisionDetailGroups .meeting-attendance-group')].map(group=>[group.dataset.attendanceRole,Number(group.querySelector('h4 b')?.textContent||0)])),
+        itemVoteAttendance:document.querySelector('#decisionDetailGroups .meeting-attendance-item-note')?.textContent.trim()||'',
         standaloneMuhammed:[...document.querySelectorAll('#decisionDetailGroups .meeting-attendance li strong')].some(node=>node.textContent.trim()==='Muhammed'),
         partyCards:indexedYesSection?.querySelectorAll('.decision-point-party').length||0,
         contextVisible:!!indexedContext&&!indexedContext.hidden,
@@ -139,6 +141,8 @@ try{
       const sourceDoc=proposal?(decisionPack?.d||[])[proposal.docIndex]||{}:{};
       const finalHeadings=[...document.querySelectorAll('#decisionDetailGroups h3')].map(node=>node.textContent.trim());
       const finalAttendanceCount=Number(document.querySelector('#decisionDetailGroups .meeting-attendance h3 b')?.textContent||0);
+      const finalAttendanceRoles=Object.fromEntries([...document.querySelectorAll('#decisionDetailGroups .meeting-attendance-group')].map(group=>[group.dataset.attendanceRole,Number(group.querySelector('h4 b')?.textContent||0)]));
+      const finalItemVoteAttendance=document.querySelector('#decisionDetailGroups .meeting-attendance-item-note')?.textContent.trim()||'';
       const descriptionText=document.querySelector('#decisionDetailGroups .decision-text-card')?.textContent.trim().slice(0,300)||'';
       const meetingLinkFound=!!document.querySelector('#decisionDetailContext [data-open-meeting]');
       const attendanceFound=!!document.querySelector('#decisionDetailGroups .meeting-attendance-panel');
@@ -174,7 +178,7 @@ try{
       if(missingRow)openDecisionDetail(missingRow.id,decisionProposalKey(missingRow));
       const missingDescriptionFallback=!!document.querySelector('#decisionDetailGroups .decision-description-unavailable');
       deep={
-        canonicalMs,delayedActiveKind,indexedHeadings,finalHeadings,finalAttendanceCount,coldDetail,
+        canonicalMs,delayedActiveKind,indexedHeadings,finalHeadings,finalAttendanceCount,finalAttendanceRoles,finalItemVoteAttendance,coldDetail,
         hydratedTab:hydratedTab?{point:hydratedTab.point||'',sourcePoint:hydratedTab.sourcePoint||'',sourcePoints:hydratedTab.sourcePoints||[]}:null,
         canonicalKeyMatches:decisionAllPointRows.filter(row=>decisionProposalKey(row)===auditKey).length,
         canonicalIdPoints:decisionAllPointRows.filter(row=>row.id==='case_body_kommunfullmaktige_2024_05_14_123').map(row=>String(row.point)).slice(0,20),
@@ -189,23 +193,32 @@ try{
     }
     return {mode:location.protocol==='file:'?'file':'http',initialLoadMs,clickKey,clickMs,detailOpened,searchFinished,incrementalRendered,incrementalSteps,errors,geometryChanges,samples,deep};
   })()`);
-  await evaluate(cdp,`(()=>{const input=document.querySelector('#decisionDecisionSearch');input.value='reload-persistence-check';input.dispatchEvent(new Event('input',{bubbles:true}));return input.value})()`);
+  const reloadSetup=await evaluate(cdp,`(()=>{const input=document.querySelector('#decisionDecisionSearch'),hash=location.hash;input.value='reload-persistence-check';input.dispatchEvent(new Event('input',{bubbles:true}));return {value:input.value,hash}})()`);
+  let hashAfterInput=reloadSetup.hash;
+  for(let attempt=0;attempt<100&&hashAfterInput===reloadSetup.hash;attempt++){
+    await new Promise(resolve=>setTimeout(resolve,25));
+    hashAfterInput=await evaluate(cdp,'location.hash');
+  }
+  result.reloadHashChanged=hashAfterInput!==reloadSetup.hash;
   await cdp.send('Page.enable');
   await cdp.send('Page.reload',{ignoreCache:true});
   for(let attempt=0;attempt<200;attempt++){
-    const ready=await evaluate(cdp,`document.readyState==='complete'&&typeof restoreDecisionSearchAfterReload==='function'&&decisionSearchQuery==='reload-persistence-check'&&document.querySelector('#decisionDecisionSearch')?.value==='reload-persistence-check'`).catch(()=>false);
+    const ready=await evaluate(cdp,`document.readyState==='complete'&&typeof restoreDecisionSearchAfterReload==='function'&&decisionSearchQuery==='reload-persistence-check'&&document.querySelector('#decisionDecisionSearch')?.value==='reload-persistence-check'&&document.querySelector('#decisionDecisionSearch')?.dataset.reloadRestored==='true'`).catch(()=>false);
     if(ready)break;
     await new Promise(resolve=>setTimeout(resolve,25));
   }
-  result.reloadSearch=await evaluate(cdp,`({field:document.querySelector('#decisionDecisionSearch')?.value||'',query:decisionSearchQuery})`);
+  result.reloadSearch=await evaluate(cdp,`({field:document.querySelector('#decisionDecisionSearch')?.value||'',query:decisionSearchQuery,restoredFromSnapshot:document.querySelector('#decisionDecisionSearch')?.dataset.reloadRestored==='true'})`);
   console.log(JSON.stringify(result,null,2));
-  if(!result.detailOpened||!result.searchFinished||!result.incrementalRendered||result.errors.length||result.geometryChanges||result.reloadSearch?.field!=='reload-persistence-check'||result.reloadSearch?.query!=='reload-persistence-check')process.exitCode=1;
+  if(!result.detailOpened||!result.searchFinished||!result.incrementalRendered||result.errors.length||result.geometryChanges||!result.reloadHashChanged||result.reloadSearch?.field!=='reload-persistence-check'||result.reloadSearch?.query!=='reload-persistence-check'||!result.reloadSearch?.restoredFromSnapshot)process.exitCode=1;
   if(deepAudit&&(
     result.deep?.delayedActiveKind!=='list'||
     result.deep?.finalAttendanceCount!==82||
+    result.deep?.finalAttendanceRoles?.councillors!==56||result.deep?.finalAttendanceRoles?.['serving-substitutes']!==17||result.deep?.finalAttendanceRoles?.substitutes!==9||
+    !result.deep?.finalItemVoteAttendance?.includes('64 personer')||
     result.deep?.coldDetail?.canonicalReady||
     !result.deep?.coldDetail?.hasFastDetail||result.deep?.coldDetail?.pendingCanonical||
     !result.deep?.coldDetail?.completeHeadings||!result.deep?.coldDetail?.reference||!result.deep?.coldDetail?.attendance||result.deep?.coldDetail?.attendanceCount!==82||result.deep?.coldDetail?.standaloneMuhammed||
+    result.deep?.coldDetail?.attendanceRoles?.councillors!==56||result.deep?.coldDetail?.attendanceRoles?.['serving-substitutes']!==17||result.deep?.coldDetail?.attendanceRoles?.substitutes!==9||!result.deep?.coldDetail?.itemVoteAttendance?.includes('64 personer')||
     result.deep?.coldDetail?.partyCards!==8||!result.deep?.coldDetail?.contextVisible||!result.deep?.coldDetail?.contextInHeader||result.deep?.coldDetail?.contextInGroups||
     result.deep?.hydratedTab?.sourcePoints?.[0]!=='123'||
     !result.deep?.proposalFields?.abstractLength||
