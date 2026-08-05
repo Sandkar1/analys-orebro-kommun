@@ -1353,6 +1353,18 @@ function decisionProgressivePaintRankedFinal(state,complete=false){
   if(decisionProgressivePointerDownFinal){state.paintPending=true;return;}
   state.paintPending=false;
   if(decisionActiveTabState()?.kind!=='list'||currentTopView()!=='decision')return;
+  decisionBindStableListEventsFinal();
+  /* Keep the current result set completely still while a new search or filter
+     is being evaluated. Replacing and re-ranking partial matches on every
+     frame made the table, counters and surrounding layout visibly shake while
+     somebody was typing. The initial load remains progressive; later jobs
+     swap in their complete result set in one paint. */
+  if(!complete&&!state.initialLoad){
+    if(state.sortedRows?.length)state.revealCount=decisionVisibleCount(decisionListTab().page||0,state.sortedRows.length);
+    const visibleCount=$('decisionBody')?.children.length||0;
+    $('decisionPage').textContent=decisionProgressiveStatusFinal(state,false,visibleCount);
+    return;
+  }
   const filteredRows=state.filteredMatches;
   const rows=complete?state.sortedRows:state.previewRows;
   const targetCount=decisionVisibleCount(decisionListTab().page||0,rows.length);
@@ -1600,7 +1612,57 @@ function decisionStableSourceLinkFinal(source){
 
 function decisionStableRowHtmlFinal(row){
   const source=decisionAnchoredSourceUrl(row);
-  return `<tr class="${decisionPointRowClass(row)}" data-id="${esc(row.id)}" data-proposal-key="${esc(decisionProposalKey(row))}"><td>${esc(row.date)}</td><td>${esc(row.body||'')}</td><td>${municipalCaseCellHtml(row)}</td><td>${decisionPointResultHtml(row)}</td><td class="num">${fmtInt(row.voteRoundCount)}</td><td class="num">${fmtInt(row.voteCount)}</td><td class="num">${fmtInt(row.yes)}</td><td class="num">${fmtInt(row.no)}</td><td class="num">${fmtInt(row.abstain)}</td><td class="num">${fmtInt(row.absent)}</td><td>${decisionStableSourceLinkFinal(source)}</td></tr>`;
+  const label=String(row.protocolHeader||row.pointTitle||row.title||'Ärende').replace(/\s+/g,' ').trim();
+  return `<tr class="${decisionPointRowClass(row)}" data-id="${esc(row.id)}" data-proposal-key="${esc(decisionProposalKey(row))}" tabindex="0" role="button" aria-label="Öppna ärendet ${esc(label)}"><td>${esc(row.date)}</td><td>${esc(row.body||'')}</td><td>${municipalCaseCellHtml(row)}</td><td>${decisionPointResultHtml(row)}</td><td class="num">${fmtInt(row.voteRoundCount)}</td><td class="num">${fmtInt(row.voteCount)}</td><td class="num">${fmtInt(row.yes)}</td><td class="num">${fmtInt(row.no)}</td><td class="num">${fmtInt(row.abstain)}</td><td class="num">${fmtInt(row.absent)}</td><td>${decisionStableSourceLinkFinal(source)}</td></tr>`;
+}
+
+function decisionIndexedRowForElementFinal(element){
+  const key=element?.dataset.proposalKey||'';
+  const stateRows=decisionProgressiveSearchStateFinal?.filteredMatches||[];
+  return stateRows.find(row=>decisionProposalKey(row)===key)||decisionTableIndexRowsFinal.find(row=>decisionProposalKey(row)===key)||null;
+}
+
+function decisionShowIndexedDetailFinal(element){
+  const row=decisionIndexedRowForElementFinal(element)||{},id=element?.dataset.id||row.id||'',proposalKey=element?.dataset.proposalKey||decisionProposalKey(row);
+  const title=String(row.protocolHeader||row.pointTitle||row.title||'Kommunalt ärende').replace(/\s+/g,' ').trim();
+  let tabIndex=decisionTabs.findIndex(tab=>tab.kind==='decision'&&tab.id===id&&String(tab.proposalKey||'')===proposalKey);
+  if(tabIndex<0){
+    decisionTabs.push({kind:'decision',id,proposalKey,title,page:0});
+    tabIndex=decisionTabs.length-1;
+  }
+  decisionActiveTab=tabIndex;
+  renderDecisionTabs();
+  $('decisionDetailTitle').textContent=title;
+  const source=decisionAnchoredSourceUrl(row);
+  $('decisionDetailMeta').innerHTML=`<span>${esc([row.body,row.date,row.diary].filter(Boolean).join(' · '))}</span>${source?` <a class="decision-official-link" href="${esc(source)}" target="_blank" rel="noopener noreferrer">Öppna källan</a>`:''}`;
+  const cards=[
+    ['Resultat',decisionDisplay('result',row.result||'beslut')],
+    ['Voteringar',fmtInt(row.voteRoundCount)],
+    ['Ja',fmtInt(row.yes)],
+    ['Nej',fmtInt(row.no)]
+  ];
+  $('decisionDetailOverview').innerHTML=cards.map(([label,value])=>`<div class="card"><span>${esc(label)}</span><b>${esc(String(value))}</b></div>`).join('');
+  const sections=[['Ärendebeskrivning',row.abstractText||row.description],['Beslut',row.fullDecisionText]].filter(([,text])=>String(text||'').trim());
+  $('decisionDetailGroups').innerHTML=sections.length?sections.map(([heading,text])=>`<article class="decision-point-card decision-text-card"><h3>${esc(heading)}</h3><p>${esc(String(text)).replace(/\n/g,'<br>')}</p></article>`).join(''):'<div class="decision-vote-panel">Ärendet öppnas. Detaljerad information laddas.</div>';
+  $('decisionDetailStatus').textContent='Ärendet är öppet. Detaljerad voteringsinformation laddas i bakgrunden.';
+  $('decisionMasterPane').hidden=true;
+  $('decisionDetailPane').hidden=false;
+  syncDecisionListDetailChromeFinal();
+}
+
+function decisionOpenStableRowFinal(element){
+  if(!element)return;
+  if(decisionCanonicalPreparationReadyFinal()){
+    openDecisionDetail(element.dataset.id,element.dataset.proposalKey);
+    return;
+  }
+  const id=element.dataset.id,proposalKey=element.dataset.proposalKey;
+  decisionShowIndexedDetailFinal(element);
+  decisionRequestCanonicalDetailsFinal();
+  ensureDecisionCanonicalDataFinal().then(()=>openDecisionDetail(id,proposalKey)).catch(error=>{
+    if(decisionActiveTabState()?.id!==id)return;
+    $('decisionDetailStatus').textContent=`Den detaljerade voteringsinformationen kunde inte laddas: ${error?.message||'okänt fel'}`;
+  });
 }
 
 function decisionBindStableListEventsFinal(){
@@ -1618,13 +1680,14 @@ function decisionBindStableListEventsFinal(){
     body.addEventListener('click',event=>{
       const row=event.target.closest?.('.decision-selectable-row');
       if(!row||event.target.closest('a'))return;
-      if(!decisionCanonicalPreparationReadyFinal()){
-        const id=row.dataset.id,proposalKey=row.dataset.proposalKey;
-        decisionRequestCanonicalDetailsFinal();
-        ensureDecisionCanonicalDataFinal().then(()=>openDecisionDetail(id,proposalKey));
-        return;
-      }
-      openDecisionDetail(row.dataset.id,row.dataset.proposalKey);
+      decisionOpenStableRowFinal(row);
+    });
+    body.addEventListener('keydown',event=>{
+      if(event.key!=='Enter'&&event.key!==' ')return;
+      const row=event.target.closest?.('.decision-selectable-row');
+      if(!row||event.target.closest('a'))return;
+      event.preventDefault();
+      decisionOpenStableRowFinal(row);
     });
   }
 }
@@ -2343,7 +2406,10 @@ renderDecisionView=function(){
   renderDecisionPageSizeControls();
   renderDecisionTabs();
   const tab=decisionActiveTabState();
-  if(tab?.kind==='decision')renderDecisionDetailView(tab);
+  if(tab?.kind==='decision'){
+    if(decisionCanonicalPreparationReadyFinal())renderDecisionDetailView(tab);
+    else decisionShowIndexedDetailFinal({dataset:{id:tab.id,proposalKey:tab.proposalKey}});
+  }
   else if(currentTopView()==='decision'){
     if(!decisionProgressiveStateIsCurrentFinal())decisionScheduleProgressiveRefreshFinal();
     else renderDecisionMasterView();
