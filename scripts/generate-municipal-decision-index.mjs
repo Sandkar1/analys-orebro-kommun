@@ -9,7 +9,7 @@ const outputPath = path.join(root, 'data', 'municipal-decision-table-index.ndjso
 const bootstrapOutputPath = path.join(root, 'data', 'municipal-decision-table-bootstrap.js');
 const meetingDetailsOutputPath = path.join(root, 'data', 'municipal-decision-meeting-details.js');
 const partsOutputDirectory = path.join(root, 'data', 'municipal-decision-table-index-parts');
-const indexVersion = '20260806-4';
+const indexVersion = '20260806-5';
 const bootstrapRowCount = 8;
 const partRowCount = 128;
 const domElement = {
@@ -55,6 +55,26 @@ const rows = vm.runInContext('decisionAllPointRows', context);
 const diaryByUrl = context.window.municipalProtocolDiaryPack?.byUrl || {};
 const documents = vm.runInContext('decisionPack.d', context);
 const proposalKeys = vm.runInContext('decisionAllPointRows.map(decisionProposalKey)', context);
+const filterOptions = vm.runInContext(`
+  (()=>{
+    const participantRows=[...decisionRows,...decisionPositionRows];
+    const parties=uniqueDecisionValues([...participantRows.map(row=>row.party),...decisionMemberRows.map(row=>row.party)].filter(Boolean));
+    const members=uniqueDecisionValues([
+      ...participantRows.map(row=>decisionMemberKey(row.name,row.party,row.body)),
+      ...decisionMemberRows.map(row=>row.memberKey||decisionMemberKey(row.name,row.party,row.body))
+    ].filter(Boolean));
+    const presentVotes=new Set(decisionRows.map(row=>row.vote).filter(Boolean));
+    return {
+      dates:uniqueDecisionValues(decisionAllPointRows.map(row=>row.date).filter(Boolean)),
+      organs:uniqueDecisionOrganValues(decisionAllPointRows.map(row=>row.body).filter(Boolean)),
+      types:uniqueDecisionValues(decisionAllPointRows.map(row=>row.proposalType).filter(Boolean)),
+      parties,
+      members,
+      votes:['Ja','Nej','Avst\u00e5r','Fr\u00e5nvarande'].filter(value=>presentVotes.has(value)),
+      results:decisionResultFilterValues(decisionAllPointRows)
+    };
+  })()
+`, context);
 
 /* A table row is clickable as soon as it reaches the browser. Generate its
    complete, unfiltered item view at the same boundary so opening one row never
@@ -219,7 +239,7 @@ for (let part = 0; part < partCount; part++) {
 }
 fs.writeFileSync(
   bootstrapOutputPath,
-  `window.municipalDecisionTableBootstrap=${JSON.stringify({ version: indexVersion, total: rows.length, partCount, fields: keepFields, meetings: bootstrapMeetingDetails, rows: cleanRows.slice(0, bootstrapRowCount) })};\n`
+  `window.municipalDecisionTableBootstrap=${JSON.stringify({ version: indexVersion, total: rows.length, partCount, fields: keepFields, filterOptions, meetings: bootstrapMeetingDetails, rows: cleanRows.slice(0, bootstrapRowCount) })};\n`
 );
 fs.writeFileSync(
   meetingDetailsOutputPath,

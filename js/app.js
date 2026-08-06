@@ -70,6 +70,7 @@ function startDecisionViewMount(){
   if(decisionViewMounted)return Promise.resolve();
   if(decisionViewMountPromise)return decisionViewMountPromise;
   decisionViewMountPromise=Promise.resolve().then(()=>{
+    decisionApplyBootstrapFilterOptionsFinal();
     decisionStartTableIndexLoadFinal();
     decisionScheduleProgressiveRefreshFinal();
     decisionViewMounted=true;

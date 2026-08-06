@@ -13,6 +13,7 @@ var decisionActivitySortDir='asc';
 var municipalDocumentActivityRowsEnrichedCache=null;
 
 const decisionActivityFilterClearValueFinal='__clear_activity_filter__';
+const decisionActivityFilterPromptValueFinal='__add_activity_filter__';
 
 function resetDecisionActivityPage(){
   decisionActivityTabs.forEach(tab=>{tab.page=0;});
@@ -137,9 +138,9 @@ function setActivitySelectOptions(id,key,values,col){
   const locked=new Set(decisionActivityFilters[key].map(String));
   sel.dataset.activityKey=key;
   sel.dataset.col=col;
-  const allOption=locked.size?`<option value="" disabled selected>Välj fler...</option><option value="${decisionActivityFilterClearValueFinal}">Alla</option>`:'<option value="">Alla</option>';
+  const allOption=locked.size?`<option value="${decisionActivityFilterPromptValueFinal}" selected>Välj fler...</option><option value="${decisionActivityFilterClearValueFinal}">Alla</option>`:'<option value="">Alla</option>';
   sel.innerHTML=[allOption,...values.filter(value=>!locked.has(String(value))).map(value=>`<option value="${esc(value)}">${esc(decisionActivityDisplay(col,value))}</option>`)].join('');
-  sel.value='';
+  sel.value=locked.size?decisionActivityFilterPromptValueFinal:'';
 }
 
 function decisionActivityFilterLabelFinal(key,col,value){
@@ -203,6 +204,7 @@ function handleDecisionActivityFilterChange(id){
   const key=sel?.dataset.activityKey;
   const value=sel?.value;
   if(key){
+    if(value===decisionActivityFilterPromptValueFinal)return;
     if(value===decisionActivityFilterClearValueFinal)decisionActivityFilters[key]=[];
     else if(value){
       if(!selectedActivityValues(key).includes(value))decisionActivityFilters[key]=[...selectedActivityValues(key),value];
