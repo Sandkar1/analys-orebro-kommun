@@ -170,6 +170,22 @@ try{
         contextHidden:!!document.querySelector('#decisionDetailContext')?.hidden,
         meta:document.querySelector('#decisionDetailMeta')?.textContent||''
       };
+      const sameMeetingKey='case_body_bygg_och_miljonamnden_2023_01_12_6|p|6';
+      const sameMeetingRow=decisionAllPointRows.find(row=>decisionProposalKey(row)===sameMeetingKey)||null;
+      if(sameMeetingRow)openDecisionDetail(sameMeetingRow.id,sameMeetingKey);
+      const sameMeetingReference=[...document.querySelectorAll('#decisionDetailGroups .decision-text-ref')].find(node=>node.textContent.trim()==='2023-01-12')||null;
+      const beforeSameMeetingTab=decisionActiveTab;
+      sameMeetingReference?.click();
+      const sameMeetingTargetTab=decisionActiveTabState();
+      const sameMeetingTargetProposal=sameMeetingTargetTab?.kind==='decision'?decisionDetailPayload(sameMeetingTargetTab)?.proposal:null;
+      const sameMeetingReferenceResult={
+        found:!!sameMeetingReference,
+        opened:decisionActiveTab!==beforeSameMeetingTab,
+        isMeeting:!!sameMeetingTargetProposal?.isMeeting,
+        date:sameMeetingTargetProposal?.date||'',
+        body:sameMeetingTargetProposal?.body||'',
+        protocolCard:!!document.querySelector('#decisionDetailGroups .meeting-protocol-card')
+      };
       const missingRow=decisionAllPointRows.find(row=>{
         if(row.isMeeting)return false;
         const doc=(decisionPack?.d||[])[row.docIndex]||{};
@@ -187,7 +203,7 @@ try{
         descriptionText,voteLayout,
         referenceFound:!!reference,referenceOpened:afterReferenceTab!==beforeReferenceTab,
         referenceTarget:referenceTargetProposal?{date:referenceTargetProposal.date,body:referenceTargetProposal.body,point:String(referenceTargetProposal.point)}:null,
-        meetingLinkFound,attendanceFound,meetingView,
+        meetingLinkFound,attendanceFound,meetingView,sameMeetingReferenceResult,
         missingDescriptionKey:missingRow?decisionProposalKey(missingRow):'',missingDescriptionFallback
       };
     }
@@ -227,6 +243,7 @@ try{
     result.deep?.referenceTarget?.date!=='2024-05-07'||
     !result.deep?.meetingLinkFound||!result.deep?.attendanceFound||
     !result.deep?.meetingView?.isMeeting||!result.deep?.meetingView?.protocolCard||!result.deep?.meetingView?.attendance||!result.deep?.meetingView?.contextHidden||
+    !result.deep?.sameMeetingReferenceResult?.found||!result.deep?.sameMeetingReferenceResult?.opened||!result.deep?.sameMeetingReferenceResult?.isMeeting||result.deep?.sameMeetingReferenceResult?.date!=='2023-01-12'||!result.deep?.sameMeetingReferenceResult?.body?.startsWith('Bygg- och milj')||!result.deep?.sameMeetingReferenceResult?.protocolCard||
     !result.deep?.missingDescriptionKey||!result.deep?.missingDescriptionFallback||
     result.deep?.voteLayout?.partyCards!==8||
     result.deep?.voteLayout?.noTop-result.deep?.voteLayout?.yesBottom>30

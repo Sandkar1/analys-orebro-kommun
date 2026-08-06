@@ -352,10 +352,18 @@ decisionReferenceDateTargetFinal=function(current,label){
   if(!iso)return null;
   const rows=decisionRuntimeIndexesFinal?.dateRows.get(iso)||[];
   if(!rows.length)return null;
-  const sameMatter=rows.filter(row=>row.matterId&&current?.matterId&&row.matterId===current.matterId);
+  const currentKey=decisionProposalKey(current);
+  if(iso===current?.date){
+    const protocolKey=decisionMeetingProtocolKey(current);
+    const meeting=rows.find(row=>row.isMeeting&&row.meetingKey===protocolKey)||
+      rows.find(row=>row.isMeeting&&row.date===current?.date&&decisionOrganMatches([current?.body],row.body));
+    if(meeting&&decisionProposalKey(meeting)!==currentKey)return {kind:'internal',row:meeting};
+  }
+  const sameMatter=rows.filter(row=>!row.isMeeting&&row.matterId&&current?.matterId&&row.matterId===current.matterId&&decisionProposalKey(row)!==currentKey);
   if(sameMatter.length)return {kind:'internal',row:decisionReferenceBestRowFinal(sameMatter,current)};
   /* The date index can contain unrelated meetings held on the same day. Keep
-     ambiguous date mentions as text unless matter identity verifies the link. */
+     ambiguous date mentions as text unless matter identity verifies the link,
+     or the date refers to the current protocol's own meeting. */
   return null;
 };
 

@@ -1202,7 +1202,7 @@ function decisionProtocolFirstPageUrlFinal(row){
   return String(row?.sourceUrl||row?.url||row?.localPath||'').split('#')[0];
 }
 function decisionReferenceInternalHtmlFinal(label,row){
-  decisionHydrateTextFieldsFinal(row);
+  if(!row?.isMeeting)decisionHydrateTextFieldsFinal(row);
   return `<button type="button" class="decision-text-ref" data-id="${esc(row.id)}" data-proposal-key="${esc(decisionProposalKey(row))}" title="${esc(row.protocolHeader||row.pointTitle||row.title||label)}">${esc(label)}</button>`;
 }
 function decisionReferenceSourceHtmlFinal(label,row,title='Öppna protokoll'){
@@ -1210,7 +1210,7 @@ function decisionReferenceSourceHtmlFinal(label,row,title='Öppna protokoll'){
   return href?`<a class="decision-text-source-ref" href="${esc(href)}" target="_blank" rel="noopener noreferrer" title="${esc(title)}">${esc(label)}</a>`:esc(label);
 }
 function decisionReferenceBestRowFinal(rows,current){
-  const list=rows.filter(Boolean).map(decisionHydrateTextFieldsFinal);
+  const list=rows.filter(Boolean).map(row=>row.isMeeting?row:decisionHydrateTextFieldsFinal(row));
   if(!list.length)return null;
   const currentId=String(current?.id||'');
   const futureSameMatter=list.filter(r=>r.matterId&&current?.matterId&&r.matterId===current.matterId&&r.id!==currentId&&String(r.date||'')>=String(current?.date||''));
@@ -1248,21 +1248,32 @@ function decisionReferenceDateTargetFinal(current,label){
   if(!iso)return null;
   const rows=decisionAllPointRows.filter(r=>r.date===iso);
   if(!rows.length)return null;
-  const sameMatter=rows.filter(r=>r.matterId&&current?.matterId&&r.matterId===current.matterId);
+  const currentKey=decisionProposalKey(current);
+  if(iso===current?.date){
+    const protocolKey=decisionMeetingProtocolKey(current);
+    const meeting=rows.find(r=>r.isMeeting&&r.meetingKey===protocolKey)||
+      rows.find(r=>r.isMeeting&&r.date===current?.date&&decisionOrganMatches([current?.body],r.body));
+    if(meeting&&decisionProposalKey(meeting)!==currentKey)return {kind:'internal',row:meeting};
+  }
+  const sameMatter=rows.filter(r=>!r.isMeeting&&r.matterId&&current?.matterId&&r.matterId===current.matterId&&decisionProposalKey(r)!==currentKey);
   if(sameMatter.length)return {kind:'internal',row:decisionReferenceBestRowFinal(sameMatter,current)};
   /* A date alone does not identify a protocol. Different municipal bodies and
      external company boards can meet on the same day. Only the same tracked
-     matter is strong enough evidence that this is the referenced protocol. */
+     matter, or the current protocol's own meeting row, is strong enough
+     evidence that this is the referenced protocol. */
   return null;
+}
+function decisionReferenceIsSelfFinal(row,current){
+  return !!row&&decisionProposalKey(row)===decisionProposalKey(current);
 }
 function decisionReferenceResolveFinal(label,current){
   if(/^\u00a7\s*\d{1,4}(?:\.\d+)?$/i.test(label)){
     const row=decisionReferencePointTargetFinal(current,label);
-    return row?{kind:'internal',row}:decisionProtocolFirstPageUrlFinal(current)?{kind:'source',row:current}:null;
+    return row&&!decisionReferenceIsSelfFinal(row,current)?{kind:'internal',row}:decisionProtocolFirstPageUrlFinal(current)?{kind:'source',row:current}:null;
   }
 if(/^[A-ZÅÄÖ][A-Za-zÅÄÖåäö]{0,6}\s+\d{1,5}\/20\d{2}$/.test(label)){
     const row=decisionReferenceDiaryTargetFinal(current,label);
-    return row?{kind:'internal',row}:null;
+    return row&&!decisionReferenceIsSelfFinal(row,current)?{kind:'internal',row}:decisionProtocolFirstPageUrlFinal(current)?{kind:'source',row:current}:null;
   }
   if(/^20\d{2}-\d{2}-\d{2}$/.test(label)||/^\d{1,2}\s+(?:januari|februari|mars|april|maj|juni|juli|augusti|september|oktober|november|december)\s+20\d{2}$/i.test(label)){
     return decisionReferenceDateTargetFinal(current,label);

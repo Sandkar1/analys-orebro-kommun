@@ -157,9 +157,9 @@ let decisionInitialLoadCompleteFinal=false;
 let rawInitialLoadCompleteFinal=false;
 let decisionActivityInitialLoadCompleteFinal=false;
 
-const municipalDecisionTableIndexSrcFinal='data/municipal-decision-table-index.ndjson.gz?v=20260806-5';
+const municipalDecisionTableIndexSrcFinal='data/municipal-decision-table-index.ndjson.gz?v=20260807-1';
 const municipalDecisionTableIndexPartsBaseFinal='data/municipal-decision-table-index-parts';
-const municipalDecisionMeetingDetailsSrcFinal='data/municipal-decision-meeting-details.js?v=20260806-5';
+const municipalDecisionMeetingDetailsSrcFinal='data/municipal-decision-meeting-details.js?v=20260807-1';
 const decisionTableIndexBootstrapFinal=window.municipalDecisionTableBootstrap||{total:0,rows:[]};
 const decisionBootstrapFilterOptionsFinal=decisionTableIndexBootstrapFinal.filterOptions||null;
 const decisionAvailableDatesBeforeBootstrapFinal=decisionAvailableDates;
@@ -251,7 +251,7 @@ async function decisionReadTableIndexStreamFinal(stream){
 
 function decisionReadTableIndexFileProgressivelyFinal(){
   return (async()=>{
-    const partCount=Math.max(0,Number(decisionTableIndexBootstrapFinal.partCount)||0),version=decisionTableIndexBootstrapFinal.version||'20260806-4';
+    const partCount=Math.max(0,Number(decisionTableIndexBootstrapFinal.partCount)||0),version=decisionTableIndexBootstrapFinal.version||'20260807-1';
     if(!partCount)throw Error('Tabellindexets lokala delar saknas.');
     await loadScriptOnce(municipalDecisionMeetingDetailsSrcFinal);
     const meetingDetails=window.municipalDecisionMeetingDetails||JSON.parse(await decodeHistoricPackText(window.municipalDecisionMeetingDetailsCompressed||''));
@@ -1691,7 +1691,7 @@ async function decisionLoadIndexedDetailPartFinal(part,proposalKey){
   if(!decisionIndexedDetailPartPromisesFinal.has(partNumber)){
     decisionIndexedDetailPartPromisesFinal.set(partNumber,(async()=>{
       const partName=String(partNumber).padStart(3,'0');
-      const version=decisionTableIndexBootstrapFinal.version||'20260806-4';
+      const version=decisionTableIndexBootstrapFinal.version||'20260807-1';
       await loadScriptOnce(`${municipalDecisionTableIndexPartsBaseFinal}/part-${partName}.js?v=${version}`);
       const columns=decisionTableIndexBootstrapFinal.fields||[];
       const rows=window.municipalDecisionTableIndexParts?.[partNumber]||JSON.parse(await decodeHistoricPackText(window.municipalDecisionTableIndexCompressedParts?.[partNumber]||''));

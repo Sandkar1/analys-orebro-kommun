@@ -67,6 +67,26 @@ vm.runInContext('decisionPack=assembleMunicipalProtocolPackParts(); ensureDecisi
 const pack = vm.runInContext('decisionPack', context);
 const runtimeRows = vm.runInContext('decisionAllPointRows', context);
 const runtimeVoteRows = vm.runInContext('decisionRows', context);
+const referenceQuery = process.argv.find(argument => argument.startsWith('--find-reference='))?.slice(17).trim() || '';
+if (referenceQuery) {
+  context.__referenceQuery = referenceQuery;
+  const selected = vm.runInContext(String.raw`(()=>{
+    const row=decisionAllPointRows.find(candidate=>decisionProposalKey(candidate)===__referenceQuery);
+    if(!row)return null;
+    decisionHydrateTextFieldsFinal(row);
+    const labels=[...String(row.abstractText||'').matchAll(/(\u00a7\s*\d{1,4}(?:\.\d+)?|\b[A-ZÅÄÖ][A-Za-zÅÄÖåäö]{0,6}\s+\d{1,5}\/20\d{2}\b|\b20\d{2}-\d{2}-\d{2}\b|\b\d{1,2}\s+(?:januari|februari|mars|april|maj|juni|juli|augusti|september|oktober|november|december)(?:\s+20\d{2})?\b)/gi)].map(match=>match[1]);
+    return {
+      row:{id:row.id,point:row.point,date:row.date,body:row.body,documentTitle:row.documentTitle,matterId:row.matterId},
+      references:labels.map(label=>{
+        const target=decisionReferenceResolveFinal(label,row);
+        return {label,target:target?{kind:target.kind,id:target.row?.id,point:target.row?.point,isMeeting:!!target.row?.isMeeting,key:target.row?decisionProposalKey(target.row):''}:null};
+      })
+    };
+  })()`, context);
+  delete context.__referenceQuery;
+  console.log(JSON.stringify(selected, null, 2));
+  process.exit(0);
+}
 const diaryPack = context.window.municipalProtocolDiaryPack || {};
 context.__voteMeaningFixture = {
   i: 'vote_meaning_fixture',
@@ -332,7 +352,7 @@ for (const row of runtimeRows) {
 }
 
 const linkAudit = vm.runInContext(String.raw`(()=>{
-  const report={texts:0,candidates:0,internal:0,source:0,noTargetPlainText:0,invalidOutput:0,samples:[],dates:{candidates:0,internal:0,source:0,plainText:0,sourceSamples:[]}};
+  const report={texts:0,candidates:0,internal:0,source:0,noTargetPlainText:0,invalidOutput:0,selfInternal:0,selfSamples:[],samples:[],dates:{candidates:0,internal:0,source:0,plainText:0,selfInternal:0,sameCurrentMeeting:0,sameCurrentOtherItem:0,sourceSamples:[]}};
   const candidatePattern=/(§\s*\d{1,4}(?:\.\d+)?|(?<![A-Za-zÅÄÖåäö])[A-ZÅÄÖ][A-Za-zÅÄÖåäö]{0,6}\s+\d{1,5}\/20\d{2}(?![A-Za-zÅÄÖåäö])|\b20\d{2}-\d{2}-\d{2}\b|\b\d{1,2}\s+(?:[Jj]anuari|[Ff]ebruari|[Mm]ars|[Aa]pril|[Mm]aj|[Jj]uni|[Jj]uli|[Aa]ugusti|[Ss]eptember|[Oo]ktober|[Nn]ovember|[Dd]ecember)(?:\s+20\d{2})?\b)/g;
   for(const row of decisionAllPointRows){
     if(row.isMeeting)continue;
@@ -349,6 +369,11 @@ const linkAudit = vm.runInContext(String.raw`(()=>{
         const resolveLabel=/^\d{1,2}\s+(?:januari|februari|mars|april|maj|juni|juli|augusti|september|oktober|november|december)$/i.test(label)
           ?decisionInferDateLabelYearFinal(text,match.index,label,row):label;
         const resolved=decisionReferenceResolveFinal(resolveLabel,row);
+        const resolvesToSelf=resolved?.kind==='internal'&&resolved.row&&decisionProposalKey(resolved.row)===decisionProposalKey(row);
+        if(resolvesToSelf){
+          report.selfInternal++;
+          if(report.selfSamples.length<12)report.selfSamples.push({id:row.id,point:row.point,label:resolveLabel,targetPoint:resolved.row.point,targetMeeting:!!resolved.row.isMeeting,currentKey:decisionProposalKey(row),targetKey:decisionProposalKey(resolved.row)});
+        }
         const isDate=/^20\d{2}-\d{2}-\d{2}$/.test(resolveLabel)||/^\d{1,2}\s+(?:januari|februari|mars|april|maj|juni|juli|augusti|september|oktober|november|december)\s+20\d{2}$/i.test(resolveLabel);
         if(isDate){
           report.dates.candidates++;
@@ -357,6 +382,12 @@ const linkAudit = vm.runInContext(String.raw`(()=>{
             report.dates.source++;
             if(report.dates.sourceSamples.length<12)report.dates.sourceSamples.push({id:row.id,point:row.point,label,targetId:resolved.row.id,targetBody:resolved.row.body});
           }else report.dates.plainText++;
+          if(resolvesToSelf)report.dates.selfInternal++;
+          const resolvedDate=/^20\d{2}-\d{2}-\d{2}$/.test(resolveLabel)?resolveLabel:decisionSwedishDateToIsoFinal(resolveLabel);
+          if(resolvedDate===row.date&&resolved?.kind==='internal'){
+            if(resolved.row?.isMeeting)report.dates.sameCurrentMeeting++;
+            else report.dates.sameCurrentOtherItem++;
+          }
         }
         if(resolved?.kind==='internal'&&resolved.row)report.internal++;
         else if(resolved?.kind==='source'&&decisionProtocolFirstPageUrlFinal(resolved.row))report.source++;
@@ -578,4 +609,4 @@ const sourceFailures = checkSourceText && remote.sourceText
     + ['missingTitles', 'missingHeaders', 'missingDescriptions', 'missingDecisions', 'pointTextMismatches', 'invalidPages']
       .reduce((total, category) => total + (remote.sourceText[category]?.count || 0), 0)
   : 0;
-if (hardFailures || linkAudit.invalidOutput || linkAudit.dates.source || remote.failures.length || sourceFailures) process.exitCode = 1;
+if (hardFailures || linkAudit.invalidOutput || linkAudit.selfInternal || linkAudit.dates.sameCurrentOtherItem || linkAudit.dates.source || remote.failures.length || sourceFailures) process.exitCode = 1;
