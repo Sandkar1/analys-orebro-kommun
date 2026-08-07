@@ -538,6 +538,7 @@ function rawProgressivePaintFinal(state,complete=false){
   if(rawProgressiveSearchStateFinal!==state)return;
   if(rawProgressivePointerDownFinal){state.paintPending=true;state.complete=complete;return;}
   state.visibleRows=state.matches;
+  state.complete=complete;
   if(!complete){
     const eligibleTarget=state.previewEligible.length,ineligibleTarget=state.previewIneligible.length;
     state.revealEligible=Math.min(state.revealEligible,eligibleTarget);
@@ -551,6 +552,7 @@ function rawProgressivePaintFinal(state,complete=false){
     if(budget&&state.revealEligible<eligibleTarget){const added=Math.min(budget,eligibleTarget-state.revealEligible);state.revealEligible+=added;budget-=added;}
     if(budget&&state.revealIneligible<ineligibleTarget)state.revealIneligible+=Math.min(budget,ineligibleTarget-state.revealIneligible);
   }
+  if(currentTopView()!=='raw')return;
   rawStableRenderRowsFinal(complete?state.sortedRows:state.previewEligible.slice(0,state.revealEligible),complete?null:state.previewIneligible.slice(0,state.revealIneligible),{complete,state});
   if(complete)return;
   $('rawCount').textContent=progressiveResultStatusFinal({active:true,matches:state.matches.length,visible:state.revealEligible+state.revealIneligible,index:state.index,total:state.total,progressLabel:state.initialLoad?'inläst':'genomsökt'});
@@ -632,7 +634,7 @@ progressiveSearchHandlersFinal.set('raw',async job=>{
       rawProgressivePaintFinal(state);
       lastPaint=now;
       lastPaintCount=state.matches.length;
-    }else{
+    }else if(currentTopView()==='raw'){
       $('rawCount').textContent=progressiveResultStatusFinal({active:true,matches:state.matches.length,visible:state.revealEligible+state.revealIneligible,index:state.index,total:state.total,progressLabel:state.initialLoad?'inläst':'genomsökt'});
     }
     if(!await progressiveVisualFrameFinal(job))return;
@@ -741,7 +743,7 @@ progressiveSearchHandlersFinal.set('decision-activity',async job=>{
       decisionActivityProgressivePaintFinal(state,false);
       lastPaint=now;
       lastPaintCount=state.matches.length;
-    }else if(decisionActivityProgressiveSearchStateFinal===state){
+    }else if(decisionActivityProgressiveSearchStateFinal===state&&currentTopView()==='decisionActivity'){
       $('decisionActivityStatus').textContent=progressiveResultStatusFinal({active:true,matches:state.matches.length,visible:$('decisionActivityBody')?.children.length||0,index:state.index,total:state.total,progressLabel:state.initialLoad?'inläst':'genomsökt'});
     }
     if(!await progressiveVisualFrameFinal(job))return;
@@ -2064,7 +2066,7 @@ buildRawFilters=function(){
     ['rawElection',options.elections,rawFilterLocks.rawElection,'election_type'],
     ['rawCounty',options.counties,rawFilterLocks.rawCounty,'county_name'],
     ['rawMunicipality',[...municipalities].sort((a,b)=>String(a).localeCompare(String(b),'sv',{numeric:true})),rawFilterLocks.rawMunicipality,'municipality_name'],
-    ['rawParty',options.parties,rawFilterLocks.rawParty,'party_standard']
+    ['rawParty',rawPartyOptionsByCurrentContext(rawRows),rawFilterLocks.rawParty,'party_standard']
   ];
   let index=0;
   const applyNext=()=>{
@@ -2325,6 +2327,7 @@ function decisionActivityBindStableEventsFinal(){
 function decisionActivityStableRenderRowsFinal(filteredRows,sortedRows,{complete=true,state=null}={}){
   if(decisionActivityProgressivePointerDownFinal){if(state){state.paintPending=true;state.complete=complete;}return;}
   if(state){state.paintPending=false;state.complete=complete;}
+  if(currentTopView()!=='decisionActivity')return;
   const listTab=decisionActivityTabs[0]||{page:0};
   const visibleRows=complete?sortedRows.slice(0,decisionVisibleCount(listTab.page||0,sortedRows.length)):sortedRows;
   if(visibleRows.length||complete)$('decisionActivityBody')?.closest('.raw-table-wrap')?.classList.remove('table-shell-awaiting-data');
@@ -2422,6 +2425,12 @@ decisionLoadingStatus=function(){
 function decisionActivityProgressivePaintFinal(state,complete=false){
   if(decisionActivityProgressiveSearchStateFinal!==state)return;
   if(decisionActivityProgressivePointerDownFinal){state.paintPending=true;state.complete=complete;return;}
+  state.visibleRows=state.matches;
+  state.complete=complete;
+  const rows=complete?state.sortedRows:state.previewRows;
+  const target=decisionVisibleCount((decisionActivityTabs[0]||{page:0}).page||0,rows.length);
+  if(!complete)state.revealCount=Math.min(target,(state.revealCount||0)+progressiveVisibleRowsPerPaintFinal.activity);
+  if(currentTopView()!=='decisionActivity'){if(complete)buildDecisionActivityFilters();return;}
   if(!state.hasPainted){
     renderDecisionActivityTabs();
     $('decisionActivityListPane').hidden=false;
@@ -2429,10 +2438,6 @@ function decisionActivityProgressivePaintFinal(state,complete=false){
     const wrap=$('decisionActivityBody')?.closest('.raw-table-wrap');
     if(wrap)wrap.scrollTop=0;
   }
-  state.visibleRows=state.matches;
-  const rows=complete?state.sortedRows:state.previewRows;
-  const target=decisionVisibleCount((decisionActivityTabs[0]||{page:0}).page||0,rows.length);
-  if(!complete)state.revealCount=Math.min(target,(state.revealCount||0)+progressiveVisibleRowsPerPaintFinal.activity);
   decisionActivityStableRenderRowsFinal(state.matches,rows.slice(0,complete?target:state.revealCount),{complete,state});
   if(complete)buildDecisionActivityFilters();
 }
@@ -2443,10 +2448,11 @@ renderDecisionActivityView=function(activeRow=null){
   if(activeRow||tab?.kind==='activity')return renderDecisionActivityViewBeforeStableFinal(activeRow);
   ensureMunicipalDocumentData();
   const state=decisionActivityProgressiveSearchStateFinal;
-  if(!state||state.key!==decisionActivityProgressiveSearchKeyFinal()||!state.complete){
+  if(!state||state.key!==decisionActivityProgressiveSearchKeyFinal()){
     scheduleTableSearch('decision-activity','decisionActivitySearch',['decisionActivityBody'],()=>renderDecisionActivityView());
     return;
   }
+  if(!state.complete){decisionActivityProgressivePaintFinal(state,false);return;}
   renderDecisionActivityTabs();
   $('decisionActivityListPane').hidden=false;
   $('decisionActivityDetailPane').hidden=true;
@@ -2609,4 +2615,61 @@ setUiRegionBusy=function(target,busy){
     wrap.classList.toggle('table-results-updating',busy);
     wrap.setAttribute('aria-busy',busy?'true':'false');
   });
+};
+
+/* Native select popups close when their option DOM is replaced. Data-derived
+   filters can finish loading while a user has a dropdown open, so defer only
+   that select's refresh until it loses focus. The latest queued refresh wins. */
+const municipalDeferredSelectRefreshesFinal=new Map();
+function municipalDeferFocusedSelectRefreshFinal(id,refresh){
+  const select=$(id);
+  if(!select||document.activeElement!==select)return false;
+  municipalDeferredSelectRefreshesFinal.set(id,refresh);
+  if(select.dataset.deferredOptionRefresh==='1')return true;
+  select.dataset.deferredOptionRefresh='1';
+  select.addEventListener('blur',()=>{
+    delete select.dataset.deferredOptionRefresh;
+    setTimeout(()=>{
+      const pending=municipalDeferredSelectRefreshesFinal.get(id);
+      if(!pending)return;
+      if(document.activeElement===select){municipalDeferFocusedSelectRefreshFinal(id,pending);return;}
+      municipalDeferredSelectRefreshesFinal.delete(id);
+      pending();
+    },0);
+  },{once:true});
+  return true;
+}
+
+const setRawSelectOptionsBeforeFocusSafetyFinal=setSelectOptions;
+setSelectOptions=function(...args){
+  const id=args[0];
+  const refresh=()=>{
+    const selected=selectedRawValues(id),latest=[...args];
+    latest[1]=[...new Set([...(args[1]||[]),...selected])];latest[2]=selected;
+    return setRawSelectOptionsBeforeFocusSafetyFinal(...latest);
+  };
+  if(municipalDeferFocusedSelectRefreshFinal(id,refresh))return;
+  return refresh();
+};
+const setDecisionSelectOptionsBeforeFocusSafetyFinal=setDecisionSelectOptions;
+setDecisionSelectOptions=function(...args){
+  const id=args[0];
+  const refresh=()=>{
+    const selected=selectedDecisionValues(id),latest=[...args];
+    latest[1]=uniqueDecisionValues([...(args[1]||[]),...selected]);latest[2]=selected;
+    return setDecisionSelectOptionsBeforeFocusSafetyFinal(...latest);
+  };
+  if(municipalDeferFocusedSelectRefreshFinal(id,refresh))return;
+  return refresh();
+};
+const setActivitySelectOptionsBeforeFocusSafetyFinal=setActivitySelectOptions;
+setActivitySelectOptions=function(...args){
+  const id=args[0],key=args[1];
+  const refresh=()=>{
+    const selected=selectedActivityValues(key),latest=[...args];
+    latest[2]=uniqueDecisionValues([...(args[2]||[]),...selected]);
+    return setActivitySelectOptionsBeforeFocusSafetyFinal(...latest);
+  };
+  if(municipalDeferFocusedSelectRefreshFinal(id,refresh))return;
+  return refresh();
 };

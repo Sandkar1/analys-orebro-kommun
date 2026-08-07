@@ -550,6 +550,85 @@ button,
   padding:10px 0 4px;
 }
 
+.calc-template-intro{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:baseline;
+  gap:5px 9px;
+  margin:12px 0 14px;
+  padding:10px 12px;
+  border-left:4px solid var(--accent);
+  border-radius:var(--radius-sm);
+  color:var(--ink-soft);
+  background:var(--cream-tint);
+  font-size:13px;
+}
+
+.calc-template-intro strong{
+  color:var(--ink);
+}
+
+.calc-template-intro[hidden],
+.calc-import-tools[hidden],
+.calc-import-menu[hidden]{
+  display:none;
+}
+
+.calc-import-tools{
+  display:flex;
+  flex-direction:column;
+  align-items:flex-end;
+  gap:7px;
+  margin:-4px 0 8px;
+}
+
+.calc-import-toggle,
+.calc-add-row{
+  min-height:30px;
+  padding:5px 9px;
+  font-size:12px;
+  font-weight:720;
+}
+
+.calc-import-menu{
+  display:grid;
+  grid-template-columns:auto minmax(180px,300px) auto;
+  align-items:center;
+  gap:7px;
+  max-width:100%;
+  padding:8px;
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  background:var(--cream-raised);
+  box-shadow:var(--shadow-control);
+}
+
+.calc-import-menu select{
+  min-width:0;
+}
+
+.calc-add-row-wrap{
+  display:flex;
+  justify-content:flex-start;
+  margin:-12px 0 18px;
+}
+
+.calc-add-row{
+  color:var(--muted);
+  border-color:transparent;
+  background:transparent;
+  box-shadow:none;
+}
+
+.calc-add-row:hover,
+.calc-add-row:focus-visible{
+  color:var(--accent-strong);
+  border-color:var(--line);
+  background:var(--cream-tint);
+  box-shadow:none;
+  transform:none;
+}
+
 #calculatorView > .actions:has(#calculate),
 #rawDataView > .actions,
 .raw-panel .actions{
@@ -3710,6 +3789,11 @@ table:not(.input-table) .decision-selectable-row:nth-child(even):hover td{
   background:var(--accent);
 }
 
+/* The wrapper is layout-neutral until the phone breakpoint below. */
+.mobile-table-scroll{
+  display:contents;
+}
+
 @media (max-width:1100px){
   .raw-overview{
     grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
@@ -3763,6 +3847,32 @@ table:not(.input-table) .decision-selectable-row:nth-child(even):hover td{
   .decision-activity-filters{
     min-width:0;
     max-width:100%;
+  }
+
+  #decisionFilters{
+    grid-template-columns:minmax(0,1fr);
+  }
+
+  #decisionMasterPane{
+    width:100%;
+    min-width:0;
+    max-width:100%;
+  }
+
+  #decisionView{
+    min-width:0;
+    max-width:100%;
+    overflow-x:clip;
+  }
+
+  #decisionOverview.raw-overview{
+    grid-template-columns:1fr;
+    width:100%;
+    overflow:visible;
+  }
+
+  #decisionOverview .card{
+    white-space:normal;
   }
 
   .raw-toolbar .field,
@@ -3831,5 +3941,324 @@ table:not(.input-table) .decision-selectable-row:nth-child(even):hover td{
 
   .confirm-actions button{
     width:100%;
+  }
+}
+
+/* Phone layout hardening. Everything in this block is intentionally scoped
+   below the mobile breakpoint so the desktop presentation remains unchanged. */
+@media (max-width:760px){
+  html{
+    -webkit-text-size-adjust:100%;
+  }
+
+  main,
+  .view,
+  .raw-panel,
+  .field,
+  .actions,
+  .raw-table-wrap{
+    min-width:0;
+    max-width:100%;
+  }
+
+  .top-tabs{
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+
+  .top-tab{
+    width:100%;
+    min-width:0;
+    min-height:44px;
+    padding:8px 9px;
+    overflow-wrap:anywhere;
+  }
+
+  .tabs{
+    flex-wrap:nowrap;
+    max-width:100%;
+    padding:4px 3px 12px;
+    overflow-x:auto;
+    overflow-y:visible;
+    scrollbar-width:thin;
+    -webkit-overflow-scrolling:touch;
+  }
+
+  .tab-wrap{
+    flex:0 0 auto;
+    max-width:calc(100vw - 52px);
+  }
+
+  .tab-select{
+    min-width:0;
+    max-width:calc(100vw - 96px);
+  }
+
+  .mobile-table-scroll{
+    display:block;
+    width:100%;
+    max-width:100%;
+    margin-bottom:20px;
+    overflow-x:auto;
+    overscroll-behavior-inline:contain;
+    scrollbar-width:thin;
+    -webkit-overflow-scrolling:touch;
+  }
+
+  .mobile-table-scroll > table{
+    min-width:620px;
+    margin-bottom:0;
+  }
+
+  #resultSections,
+  #stepSections{
+    max-width:100%;
+    overflow-x:auto;
+    overscroll-behavior-inline:contain;
+    scrollbar-width:thin;
+    -webkit-overflow-scrolling:touch;
+  }
+
+  #resultSections > table,
+  #stepSections > table{
+    min-width:680px;
+  }
+
+  .decision-detail-head{
+    grid-template-columns:1fr;
+    gap:8px;
+  }
+
+  .decision-detail-head > *,
+  .decision-detail-context{
+    grid-column:1;
+    justify-self:stretch;
+    max-width:100%;
+  }
+
+  .decision-detail-head > button{
+    justify-self:start;
+  }
+
+  .decision-detail-context{
+    margin-top:0;
+  }
+
+  .document-meta-list{
+    grid-template-columns:1fr;
+  }
+
+  .document-meta-list dt{
+    padding-bottom:3px;
+    border-bottom:0;
+  }
+
+  .document-meta-list dd{
+    padding-top:3px;
+  }
+
+  .decision-activity-detail-grid,
+  .meeting-attendance-groups,
+  .decision-point-columns{
+    grid-template-columns:minmax(0,1fr);
+  }
+
+  .meeting-attendance li{
+    max-width:100%;
+    white-space:normal;
+    overflow-wrap:anywhere;
+  }
+
+  .raw-selectable-row .raw-pick{
+    width:24px;
+    height:24px;
+  }
+
+  .decision-position-name,
+  .decision-status-pill,
+  .decision-official-link{
+    max-width:100%;
+    white-space:normal;
+    overflow-wrap:anywhere;
+  }
+
+  .decision-vote-type h4,
+  .decision-position-group h4,
+  .meeting-attendance h3{
+    flex-wrap:wrap;
+  }
+
+  .decision-date-field .date-calendar{
+    left:50%;
+    width:min(322px,calc(100vw - 24px));
+    transform:translateX(-50%);
+  }
+
+  .confirm-overlay{
+    place-items:start center;
+    padding:12px;
+    overflow-y:auto;
+    overscroll-behavior:contain;
+  }
+
+  .confirm-dialog{
+    max-height:calc(100dvh - 24px);
+    margin:auto 0;
+    overflow-y:auto;
+  }
+
+  input,
+  select,
+  textarea,
+  #rawSearch,
+  #decisionDecisionSearch,
+  #decisionActivitySearch,
+  .decision-activity-search-field input{
+    font-size:16px;
+  }
+}
+
+@media (max-width:560px){
+  main{
+    margin:6px;
+    padding:12px;
+  }
+
+  h1{
+    grid-template-columns:minmax(0,1fr) 60px;
+    gap:10px;
+    font-size:22px;
+  }
+
+  h1::after{
+    width:60px;
+    height:60px;
+    border-radius:14px;
+  }
+
+  .session-toolbar{
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:6px;
+  }
+
+  .session-button{
+    width:100%;
+    min-width:0;
+    min-height:40px;
+    white-space:normal;
+  }
+
+  .top-tabs{
+    grid-template-columns:1fr;
+  }
+
+  .grid,
+  .raw-toolbar,
+  .raw-filter-row,
+  .raw-panel{
+    padding:11px;
+  }
+
+  .method-params{
+    grid-column:auto;
+    grid-template-columns:1fr;
+  }
+
+  .factor-field,
+  .factor-field input{
+    width:100%;
+    max-width:none;
+  }
+
+  .actions > button{
+    flex:1 1 100%;
+    width:100%;
+    min-width:0;
+    min-height:42px;
+    white-space:normal;
+  }
+
+  .calc-import-tools{
+    align-items:stretch;
+  }
+
+  .calc-import-toggle{
+    align-self:flex-end;
+  }
+
+  .calc-import-menu{
+    grid-template-columns:1fr;
+  }
+
+  .calc-import-menu button,
+  .calc-import-menu select{
+    width:100%;
+  }
+
+  .raw-page-size-options,
+  .decision-page-size-options{
+    width:100%;
+  }
+
+  .raw-page-size-option,
+  .decision-page-size-option{
+    flex:1 1 auto;
+  }
+
+  .date-calendar{
+    padding:9px;
+    border-radius:12px;
+  }
+
+  .date-calendar-head{
+    gap:5px;
+  }
+
+  .date-calendar-title{
+    grid-template-columns:minmax(0,1fr) minmax(74px,.72fr);
+    gap:4px;
+  }
+
+  .date-calendar-title select{
+    padding-right:20px;
+  }
+
+  .date-calendar-grid{
+    gap:3px;
+  }
+
+  .date-calendar-day{
+    min-height:34px;
+    border-radius:7px;
+  }
+
+  .decision-text-card,
+  .decision-point-card,
+  .decision-motion-card,
+  .decision-party-card{
+    padding:12px;
+  }
+
+  .decision-text-card .decision-text-list li{
+    padding-right:9px;
+    padding-left:36px;
+  }
+
+  .decision-text-card .decision-text-list li::before{
+    left:9px;
+  }
+
+  .decision-point-party-list,
+  .decision-point-votes ul{
+    columns:1;
+  }
+
+  .card{
+    min-height:72px;
+  }
+
+  .card b{
+    font-size:21px;
   }
 }

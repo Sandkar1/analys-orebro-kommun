@@ -2,12 +2,13 @@
 <html lang="sv">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Mandatfördelning och analys</title>
 <meta name="theme-color" content="#173a5e">
 <link rel="icon" href="assets/election-analysis-icon.svg" type="image/svg+xml">
 <link rel="alternate icon" href="assets/app_icon_modern_compressed.jpg" type="image/jpeg">
 <link rel="apple-touch-icon" href="assets/app_icon_modern_compressed.jpg">
-<link rel="stylesheet" href="styles.css?v=20260806-4">
+<link rel="stylesheet" href="styles.css?v=20260807-2">
 </head>
 <body>
 <main>
@@ -27,11 +28,16 @@
 <section id="calculatorView" class="view active">
 <section class="tabs" id="tabs">
 </section>
-<section class="actions">
+<section id="calculatorTabActions" class="actions">
 <button id="newTab" class="secondary">+ Ny beräkning</button>
 <button id="duplicateTab" class="secondary">Duplicera flik</button>
+<button id="reset" class="secondary">Återställ initiell data</button>
 </section>
-<section class="grid">
+<section id="calcTemplateIntro" class="calc-template-intro" hidden>
+<strong>Huvudvy för partimallen</strong>
+<span>Partierna och värdena här kopieras när du skapar en ny beräkningsflik. Själva beräkningarna görs i de nya flikarna.</span>
+</section>
+<section id="calcSettings" class="grid">
 <div class="field">
 <label for="tabTitle">Fliknamn</label>
 <input id="tabTitle">
@@ -61,19 +67,16 @@
 <label for="seats">Mandat</label>
 <input id="seats" inputmode="numeric">
 </div>
-</div>
 </section>
-<section class="actions">
+<section id="calcActions" class="actions">
 <button id="calculate">Beräkna mandat</button>
 <button id="reroll" class="secondary">Ny lottning</button>
-<button id="add" class="secondary">Lägg till rad</button>
-<button id="reset" class="secondary">Återställ initiell data</button>
 </section>
 <div id="error" class="error">
 </div>
 <div id="notice" class="notice">
 </div>
-<section class="cards">
+<section id="calcSummary" class="cards">
 <div class="card">Totalt antal röster<b id="cardVotes">—</b>
 </div>
 <div class="card">
@@ -85,7 +88,16 @@
 <div class="card">Lottningar på sista mandat<b id="cardLotteries">—</b>
 </div>
 </section>
-<h2>Indata</h2>
+<h2 id="calcInputTitle">Indata</h2>
+<section id="calcImportTools" class="calc-import-tools" hidden>
+<button id="calcImportToggle" class="secondary calc-import-toggle" type="button" aria-expanded="false" aria-controls="calcImportMenu">Importera från</button>
+<div id="calcImportMenu" class="calc-import-menu" hidden>
+<label for="calcImportSource">Beräkningsflik</label>
+<select id="calcImportSource"></select>
+<button id="calcImportApply" class="secondary" type="button">Använd mandat som röster</button>
+</div>
+</section>
+<div class="mobile-table-scroll">
 <table class="input-table">
 <thead>
 <tr>
@@ -100,6 +112,10 @@
 <tbody id="inputRows">
 </tbody>
 </table>
+</div>
+<div class="calc-add-row-wrap">
+<button id="add" class="secondary calc-add-row" type="button">+ Lägg till rad</button>
+</div>
 <section id="resultSections">
 </section>
 <section id="stepSections">
@@ -447,12 +463,12 @@
 <script defer src="data/municipal-document-data-orebro.js"></script>
 <script defer src="data/municipal-protocol-diary-data.js?v=20260624-1"></script>
 <script defer src="data/municipal-decision-table-bootstrap.js?v=20260807-1"></script>
-<script defer src="js/app-core.js?v=20260806-4"></script>
-<script defer src="js/calculator-tab.js?v=20260803-1"></script>
-<script defer src="js/historisk-valdata-tab.js?v=20260806-5"></script>
+<script defer src="js/app-core.js?v=20260807-1"></script>
+<script defer src="js/calculator-tab.js?v=20260807-1"></script>
+<script defer src="js/historisk-valdata-tab.js?v=20260807-1"></script>
 <script defer src="js/municipal-protocols-tab.js?v=20260807-1"></script>
 <script defer src="js/search-performance.js?v=20260807-1"></script>
 <script defer src="js/municipal-documents-tab.js?v=20260806-5"></script>
-<script defer src="js/progressive-search.js?v=20260807-1"></script>
-<script defer src="js/app.js?v=20260806-5"></script></main></body></html>
+<script defer src="js/progressive-search.js?v=20260807-3"></script>
+<script defer src="js/app.js?v=20260807-3"></script></main></body></html>
 

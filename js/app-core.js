@@ -3,7 +3,7 @@ const programVersion="";
 const municipalWorkEnabled=true;
 const historicPack=window.historicPack;
 let decisionPack=window.municipalProtocolPack,documentPack=window.municipalDocumentPack,decisionPackPromise=null;
-const stateFormatVersion=1;
+const stateFormatVersion=2;
 const municipalProtocolDataVersion='20260806-1';
 const municipalProtocolPackSrcs=[
   `data/municipal-protocol-data-orebro-v2.js?v=${municipalProtocolDataVersion}`

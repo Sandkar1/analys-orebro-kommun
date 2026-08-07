@@ -56,11 +56,12 @@ async function keyboardSelect(id,stateExpression){
   const before=await evaluate(`(()=>{const e=document.getElementById(${JSON.stringify(id)});e.scrollIntoView({block:'center'});e.focus();const r=e.getBoundingClientRect();return {value:e.value,state:${stateExpression},disabled:e.disabled,options:e.options.length,pointer:getComputedStyle(e).pointerEvents,hit:document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)?.id||''}})()`);
   await cdp.send('Input.dispatchKeyEvent',{type:'keyDown',key:'ArrowDown',code:'ArrowDown',windowsVirtualKeyCode:40,nativeVirtualKeyCode:40});
   await cdp.send('Input.dispatchKeyEvent',{type:'keyUp',key:'ArrowDown',code:'ArrowDown',windowsVirtualKeyCode:40,nativeVirtualKeyCode:40});
+  const mid=await evaluate(`(()=>{const e=document.getElementById(${JSON.stringify(id)});return {value:e.value,state:${stateExpression},selectedText:e.options[e.selectedIndex]?.textContent||'',active:document.activeElement===e}})()`);
   await cdp.send('Input.dispatchKeyEvent',{type:'keyDown',key:'Tab',code:'Tab',windowsVirtualKeyCode:9,nativeVirtualKeyCode:9});
   await cdp.send('Input.dispatchKeyEvent',{type:'keyUp',key:'Tab',code:'Tab',windowsVirtualKeyCode:9,nativeVirtualKeyCode:9});
   await wait(150);
   const after=await evaluate(`(()=>{const e=document.getElementById(${JSON.stringify(id)});return {value:e.value,state:${stateExpression},selectedText:e.options[e.selectedIndex]?.textContent||'',active:document.activeElement===e}})()`);
-  return {before,after};
+  return {before,mid,after};
 }
 async function addAnotherFilter(id,stateExpression){
   const before=await evaluate(stateExpression);
@@ -74,16 +75,73 @@ async function auditSelects(ids){
   for(const id of ids)result[id]=await evaluate(`(()=>{const e=document.getElementById(${JSON.stringify(id)});e.scrollIntoView({block:'center'});const r=e.getBoundingClientRect();return {options:e.options.length,disabled:e.disabled,pointer:getComputedStyle(e).pointerEvents,hit:document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)?.id||''}})()`);
   return result;
 }
+async function functionalSelect(id,stateExpression){
+  const before=await evaluate(`(()=>{const e=document.getElementById(${JSON.stringify(id)}),r=e.getBoundingClientRect();return {value:e.value,state:${stateExpression},disabled:e.disabled,options:e.options.length,pointer:getComputedStyle(e).pointerEvents,hit:document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)?.id||''}})()`);
+  const mid=await evaluate(`(()=>{const e=document.getElementById(${JSON.stringify(id)}),option=[...e.options].find(item=>item.value&&!item.value.startsWith('__'));e.focus();if(option){e.value=option.value;e.dispatchEvent(new Event('change',{bubbles:true}));}return {value:e.value,state:${stateExpression},selectedText:e.options[e.selectedIndex]?.textContent||'',active:document.activeElement===e}})()`);
+  await evaluate(`document.getElementById(${JSON.stringify(id)}).blur()`);
+  await wait(150);
+  const after=await evaluate(`(()=>{const e=document.getElementById(${JSON.stringify(id)});return {value:e.value,state:${stateExpression},selectedText:e.options[e.selectedIndex]?.textContent||'',active:document.activeElement===e}})()`);
+  return {before,mid,after};
+}
+async function exerciseSelects(configs){
+  const result={};
+  for(const config of configs){
+    result[config.id]=await functionalSelect(config.id,config.state);
+    await evaluate(config.reset);
+    await wait(100);
+  }
+  return result;
+}
 
 try{
   cdp=await connect((await pageTarget()).webSocketDebuggerUrl);
   await cdp.send('Runtime.enable');
-  await waitFor(`document.readyState==='complete'&&typeof setTopView==='function'`);
+  await waitFor(`document.readyState==='complete'&&typeof setTopView==='function'&&tabs.length===1`);
+  const calculatorTemplate=await evaluate(`(()=>{
+    const before={tabs:tabs.length,activeTab,role:tabs[0]?.role,title:tabs[0]?.title,closeButtons:document.querySelectorAll('.calc-tab-close').length,settingsHidden:document.getElementById('calcSettings').hidden,summaryHidden:document.getElementById('calcSummary').hidden,templateVisible:!document.getElementById('calcTemplateIntro').hidden,addBelowTable:document.querySelector('.mobile-table-scroll')?.nextElementSibling?.contains(document.getElementById('add'))||false};
+    closeCalcTab(0);
+    const afterClose={tabs:tabs.length,activeTab};
+    const vote=document.querySelector('.p-votes');vote.value='41';vote.dispatchEvent(new Event('input',{bubbles:true}));
+    const templateParties=JSON.stringify(tabs[0].parties.map(p=>[p.name,p.votes,p.icon]));
+    document.getElementById('newTab').click();
+    const afterCreate={tabs:tabs.length,activeTab,role:current()?.role,title:current()?.title,closeButtons:document.querySelectorAll('.calc-tab-close').length,settingsHidden:document.getElementById('calcSettings').hidden,summaryHidden:document.getElementById('calcSummary').hidden,templateHidden:document.getElementById('calcTemplateIntro').hidden,importVisible:!document.getElementById('calcImportTools').hidden,copied:JSON.stringify(current().parties.map(p=>[p.name,p.votes,p.icon]))===templateParties};
+    return {before,afterClose,afterCreate,templateParties};
+  })()`);
   const calculator=await keyboardSelect('method',`document.getElementById('method').value`);
   const calculatorIcon=await evaluate(`(()=>{const e=document.querySelector('.p-icon'),before=current().parties[0].icon,option=[...e.options].find(item=>Number(item.value)!==Number(e.value));e.scrollIntoView({block:'center'});e.value=option.value;e.dispatchEvent(new Event('input',{bubbles:true}));const r=e.getBoundingClientRect();return {options:e.options.length,disabled:e.disabled,pointer:getComputedStyle(e).pointerEvents,hit:document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)?.classList.contains('p-icon')||false,before,after:current().parties[0].icon}})()`);
+  const calculatorImport=await evaluate(`(()=>{
+    document.getElementById('calculate').click();
+    const source=current(),sourceId=source.id,expected=calculationMandateRows(source).map(p=>[p.name,p.votes,p.icon]);
+    document.getElementById('newTab').click();
+    const copiedFromTemplate=JSON.stringify(current().parties.map(p=>[p.name,p.votes,p.icon]))===${JSON.stringify(calculatorTemplate.templateParties)};
+    document.getElementById('calcImportToggle').click();
+    const select=document.getElementById('calcImportSource'),sourceOption=[...select.options].find(option=>Number(option.value)===sourceId);
+    if(sourceOption){select.value=sourceOption.value;select.dispatchEvent(new Event('change',{bubbles:true}));document.getElementById('calcImportApply').click();}
+    return {sourceReady:!!source.result&&!source.dirty,sourceOption:!!sourceOption,copiedFromTemplate,imported:JSON.stringify(current().parties.map(p=>[p.name,p.votes,p.icon]))===JSON.stringify(expected),dirty:current().dirty,resultCleared:current().result===null,notice:document.getElementById('notice').textContent,tabCount:tabs.length,templateRole:tabs[0]?.role};
+  })()`);
   await evaluate(`document.getElementById('rawTopTab').click()`);
   await waitFor(`typeof rawReady!=='undefined'&&rawReady&&document.getElementById('rawYear').options.length>1`);
+  const rawPartyOrdering=await evaluate(`(async()=>{
+    const saved=Object.fromEntries(Object.entries(rawFilterLocks).map(([key,value])=>[key,[...value]]));
+    const sample=rawRows.find(row=>String(row.year)==='2022'&&rawComparable(row,'election_type')==='municipal'&&/rebro/i.test(rawComparable(row,'municipality_name')));
+    if(!sample)return {ok:false,reason:'missing-context'};
+    rawFilterLocks={rawYear:['2022'],rawElection:['municipal'],rawCounty:[rawComparable(sample,'county_name')],rawMunicipality:[rawComparable(sample,'municipality_name')],rawParty:[]};
+    buildRawFilters();
+    for(let frame=0;frame<7;frame++)await new Promise(resolve=>requestAnimationFrame(resolve));
+    const rows=rawRowsForPartyOptions(rawRows),totals=new Map();
+    rows.forEach(row=>{const party=rawComparable(row,'party_standard');if(party)totals.set(party,(totals.get(party)||0)+(Number(rawValue(row,'votes'))||0));});
+    const expected=[...totals].sort((a,b)=>b[1]-a[1]||rawDisplay('party_standard',a[0]).localeCompare(rawDisplay('party_standard',b[0]),'sv',{numeric:true,sensitivity:'base'})).map(([party])=>party);
+    const actual=[...document.getElementById('rawParty').options].map(option=>option.value).filter(value=>value&&!value.startsWith('__'));
+    const votes=actual.map(party=>totals.get(party)||0),descending=votes.every((value,index)=>index===0||votes[index-1]>=value);
+    rawFilterLocks=saved;buildRawFilters();rawScheduleProgressiveFinal();
+    for(let frame=0;frame<7;frame++)await new Promise(resolve=>requestAnimationFrame(resolve));
+    return {ok:descending&&JSON.stringify(actual)===JSON.stringify(expected),actual:actual.slice(0,12),votes:votes.slice(0,12),expected:expected.slice(0,12)};
+  })()`);
   const rawInventory=await auditSelects(['rawYear','rawElection','rawCounty','rawMunicipality','rawParty']);
+  const rawFunctional=await exerciseSelects(['rawYear','rawElection','rawCounty','rawMunicipality','rawParty'].map(id=>({
+    id,state:`JSON.stringify(rawFilterLocks[${JSON.stringify(id)}])`,
+    reset:`(()=>{rawFilterLocks[${JSON.stringify(id)}]=[];buildRawFilters();rawScheduleProgressiveFinal();return true})()`
+  })));
   const raw=await keyboardSelect('rawYear',`JSON.stringify(rawFilterLocks.rawYear)`);
   await evaluate(`document.getElementById('decisionTopTab').click()`);
   await waitFor(`document.getElementById('decisionOrgan').options.length>1`,400);
@@ -91,30 +149,67 @@ try{
   await evaluate(`document.getElementById('decisionDateToggle').click()`);
   await waitFor(`document.querySelector('.date-calendar-month')?.options.length===12`);
   const calendarBefore=await evaluate(`(()=>{const month=document.querySelector('.date-calendar-month'),year=document.querySelector('.date-calendar-year'),r=month.getBoundingClientRect();return {month:month.value,monthOptions:month.options.length,yearOptions:year.options.length,hit:document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)?.classList.contains('date-calendar-month')||false,canonical:decisionCanonicalPreparationReadyFinal()}})()`);
-  const calendarAfter=await evaluate(`(()=>{const month=document.querySelector('.date-calendar-month'),option=[...month.options].find(item=>item.value!==month.value);month.value=option.value;month.dispatchEvent(new Event('change',{bubbles:true}));return decisionCalendarMonth})()`);
+  const calendarMonthAfter=await evaluate(`(()=>{const month=document.querySelector('.date-calendar-month'),option=[...month.options].find(item=>item.value!==month.value);month.value=option.value;month.dispatchEvent(new Event('change',{bubbles:true}));return decisionCalendarMonth})()`);
+  const calendarYearAfter=await evaluate(`(()=>{const year=document.querySelector('.date-calendar-year'),before=year.value,option=[...year.options].find(item=>item.value!==before);year.value=option.value;year.dispatchEvent(new Event('change',{bubbles:true}));return {before,after:decisionCalendarMonth.slice(0,4)}})()`);
   await evaluate(`document.getElementById('decisionDateToggle').click()`);
   const decisionInventory=await auditSelects(['decisionOrgan','decisionProposalType','decisionParty','decisionMember','decisionVote','decisionResult']);
+  const decisionFunctional=await exerciseSelects(['decisionOrgan','decisionProposalType','decisionParty','decisionMember','decisionVote','decisionResult'].map(id=>({
+    id,state:`JSON.stringify(decisionFilterLocks[${JSON.stringify(id)}])`,
+    reset:`(()=>{decisionFilterLocks[${JSON.stringify(id)}]=[];decisionApplyBootstrapFilterOptionsFinal();decisionScheduleProgressiveRefreshFinal();return true})()`
+  })));
+  const navigationDuringDecisionLoad=await evaluate(`(async()=>{
+    const started=performance.now();
+    ensureDecisionCanonicalDataFinal().catch(()=>{});
+    await new Promise(resolve=>setTimeout(resolve,25));
+    const loadingAtSwitch=!decisionCanonicalPreparationReadyFinal();
+    document.getElementById('rawTopTab').click();
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    const result={view:currentTopView(),loadingAtSwitch,totalMs:performance.now()-started,canonicalPending:!!decisionCanonicalMountPromise};
+    document.getElementById('decisionTopTab').click();
+    return result;
+  })()`);
   const decision=await keyboardSelect('decisionOrgan',`JSON.stringify(decisionFilterLocks.decisionOrgan)`);
   await evaluate(`document.getElementById('decisionActivityTopTab').click()`);
   await waitFor(`document.getElementById('decisionActivityType').options.length>1`,400);
   const activityInventory=await auditSelects(['decisionActivityType','decisionActivityParty','decisionActivityPoliticalOwner','decisionActivityOfficialOwner']);
+  const activityKeys={decisionActivityType:'type',decisionActivityParty:'party',decisionActivityPoliticalOwner:'politicalOwner',decisionActivityOfficialOwner:'officialOwner'};
+  const activityFunctional=await exerciseSelects(Object.entries(activityKeys).map(([id,key])=>({
+    id,state:`JSON.stringify(decisionActivityFilters[${JSON.stringify(key)}])`,
+    reset:`(()=>{decisionActivityFilters[${JSON.stringify(key)}]=[];buildDecisionActivityFilters();renderDecisionActivityView();return true})()`
+  })));
+  const navigationDuringActivityLoad=await evaluate(`(async()=>{
+    decisionActivitySearchQuery='audit-background-load';
+    document.getElementById('decisionActivitySearch').value=decisionActivitySearchQuery;
+    scheduleTableSearch('decision-activity','decisionActivitySearch',['decisionActivityBody'],()=>renderDecisionActivityView());
+    await new Promise(resolve=>requestAnimationFrame(resolve));
+    const loadingAtSwitch=!!decisionActivityProgressiveSearchStateFinal&&!decisionActivityProgressiveSearchStateFinal.complete;
+    const started=performance.now();
+    document.getElementById('calculatorTopTab').click();
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    const result={view:currentTopView(),loadingAtSwitch,switchMs:performance.now()-started,jobContinues:!!progressiveSearchJobsFinal.get('decision-activity')};
+    decisionActivitySearchQuery='';document.getElementById('decisionActivitySearch').value='';
+    document.getElementById('decisionActivityTopTab').click();
+    return result;
+  })()`);
   const activity=await keyboardSelect('decisionActivityType',`JSON.stringify(decisionActivityFilters.type)`);
   const additive={
     raw:await addAnotherFilter('rawYear',`JSON.stringify(rawFilterLocks.rawYear)`),
     decision:await addAnotherFilter('decisionOrgan',`JSON.stringify(decisionFilterLocks.decisionOrgan)`),
     activity:await addAnotherFilter('decisionActivityType',`JSON.stringify(decisionActivityFilters.type)`)
   };
-  const reloadExpected=await evaluate(`({top:currentTopView(),raw:JSON.stringify(rawFilterLocks.rawYear),decision:JSON.stringify(decisionFilterLocks.decisionOrgan),activity:JSON.stringify(decisionActivityFilters.type)})`);
+  const reloadExpected=await evaluate(`({top:currentTopView(),raw:JSON.stringify(rawFilterLocks.rawYear),decision:JSON.stringify(decisionFilterLocks.decisionOrgan),activity:JSON.stringify(decisionActivityFilters.type),calculator:JSON.stringify(tabs.map(tab=>[tab.role,tab.title,tab.dirty,tab.parties.map(party=>[party.name,party.votes,party.icon])]))})`);
   const reloadHash=await evaluate(`(async()=>{await updateUrlHashSession();return location.hash})()`);
   await cdp.send('Page.enable');
   await cdp.send('Page.reload',{ignoreCache:true});
-  await waitFor(`document.readyState==='complete'&&typeof currentTopView==='function'&&currentTopView()===${JSON.stringify(reloadExpected.top)}&&JSON.stringify(rawFilterLocks.rawYear)===${JSON.stringify(reloadExpected.raw)}&&JSON.stringify(decisionFilterLocks.decisionOrgan)===${JSON.stringify(reloadExpected.decision)}&&JSON.stringify(decisionActivityFilters.type)===${JSON.stringify(reloadExpected.activity)}`,500);
-  const reload=await evaluate(`({mode:location.protocol==='file:'?'file':'http',hash:location.hash,top:currentTopView(),raw:JSON.stringify(rawFilterLocks.rawYear),decision:JSON.stringify(decisionFilterLocks.decisionOrgan),activity:JSON.stringify(decisionActivityFilters.type),activityOptions:document.getElementById('decisionActivityType').options.length,promptDisabled:document.getElementById('decisionActivityType').options[0]?.disabled??true})`);
+  await waitFor(`document.readyState==='complete'&&typeof currentTopView==='function'&&currentTopView()===${JSON.stringify(reloadExpected.top)}&&JSON.stringify(rawFilterLocks.rawYear)===${JSON.stringify(reloadExpected.raw)}&&JSON.stringify(decisionFilterLocks.decisionOrgan)===${JSON.stringify(reloadExpected.decision)}&&JSON.stringify(decisionActivityFilters.type)===${JSON.stringify(reloadExpected.activity)}&&JSON.stringify(tabs.map(tab=>[tab.role,tab.title,tab.dirty,tab.parties.map(party=>[party.name,party.votes,party.icon])]))===${JSON.stringify(reloadExpected.calculator)}`,500);
+  const reload=await evaluate(`({mode:location.protocol==='file:'?'file':'http',hash:location.hash,top:currentTopView(),raw:JSON.stringify(rawFilterLocks.rawYear),decision:JSON.stringify(decisionFilterLocks.decisionOrgan),activity:JSON.stringify(decisionActivityFilters.type),calculator:JSON.stringify(tabs.map(tab=>[tab.role,tab.title,tab.dirty,tab.parties.map(party=>[party.name,party.votes,party.icon])])),activityOptions:document.getElementById('decisionActivityType').options.length,promptDisabled:document.getElementById('decisionActivityType').options[0]?.disabled??true})`);
   const postReload=await addAnotherFilter('decisionActivityType',`JSON.stringify(decisionActivityFilters.type)`);
   const inventory={...rawInventory,...decisionInventory,...activityInventory};
-  const result={mode:fileAudit?'file':'http',calculator,calculatorIcon,inventory,raw,decisionCold,calendar:{before:calendarBefore,after:calendarAfter},decision,activity,additive,reloadExpected,reloadHashChanged:!!reloadHash,reload,postReload};
+  const functional={...rawFunctional,...decisionFunctional,...activityFunctional};
+  const functionalFailures=Object.entries(functional).filter(([,item])=>item.before.disabled||item.before.options<2||item.before.state===item.after.state).map(([id,item])=>({id,mid:item.mid,after:item.after}));
+  const result={mode:fileAudit?'file':'http',functionalFailures,calculatorTemplate,calculatorImport,calculator,calculatorIcon,rawPartyOrdering,inventory,functional,raw,decisionCold,calendar:{before:calendarBefore,monthAfter:calendarMonthAfter,yearAfter:calendarYearAfter},navigationDuringDecisionLoad,navigationDuringActivityLoad,decision,activity,additive,reloadExpected,reloadHashChanged:!!reloadHash,reload,postReload};
   console.log(JSON.stringify(result,null,2));
-  if(!decisionCold.bootstrap||decisionCold.options<2||calculatorIcon.disabled||calculatorIcon.pointer==='none'||!calculatorIcon.hit||calculatorIcon.options<2||calculatorIcon.before===calculatorIcon.after||calendarBefore.monthOptions!==12||calendarBefore.yearOptions<2||!calendarBefore.hit||calendarBefore.month===calendarAfter.slice(-2)||Object.values(inventory).some(item=>item.disabled||item.pointer==='none'||!item.hit||item.options<2)||Object.entries({calculator,raw,decision,activity}).some(([,item])=>item.before.disabled||item.before.pointer==='none'||!item.before.hit||item.before.options<2||item.before.state===item.after.state)||Object.values(additive).some(item=>!item.chosen||item.before===item.after||JSON.parse(item.after).length<2)||!reloadHash||reload.top!==reloadExpected.top||reload.raw!==reloadExpected.raw||reload.decision!==reloadExpected.decision||reload.activity!==reloadExpected.activity||reload.activityOptions<2||reload.promptDisabled||!postReload.chosen||JSON.parse(postReload.after).length<3)process.exitCode=1;
+  if(calculatorTemplate.before.tabs!==1||calculatorTemplate.before.activeTab!==0||calculatorTemplate.before.role!=='template'||calculatorTemplate.before.title!=='Huvudvy'||calculatorTemplate.before.closeButtons!==0||!calculatorTemplate.before.settingsHidden||!calculatorTemplate.before.summaryHidden||!calculatorTemplate.before.templateVisible||!calculatorTemplate.before.addBelowTable||calculatorTemplate.afterClose.tabs!==1||calculatorTemplate.afterClose.activeTab!==0||calculatorTemplate.afterCreate.tabs!==2||calculatorTemplate.afterCreate.activeTab!==1||calculatorTemplate.afterCreate.role!=='calculation'||calculatorTemplate.afterCreate.closeButtons!==1||calculatorTemplate.afterCreate.settingsHidden||calculatorTemplate.afterCreate.summaryHidden||!calculatorTemplate.afterCreate.templateHidden||!calculatorTemplate.afterCreate.importVisible||!calculatorTemplate.afterCreate.copied||!calculatorImport.sourceReady||!calculatorImport.sourceOption||!calculatorImport.copiedFromTemplate||!calculatorImport.imported||!calculatorImport.dirty||!calculatorImport.resultCleared||calculatorImport.tabCount!==3||calculatorImport.templateRole!=='template'||!rawPartyOrdering.ok||!decisionCold.bootstrap||decisionCold.options<2||calculatorIcon.disabled||calculatorIcon.pointer==='none'||!calculatorIcon.hit||calculatorIcon.options<2||calculatorIcon.before===calculatorIcon.after||calendarBefore.monthOptions!==12||calendarBefore.yearOptions<2||!calendarBefore.hit||calendarBefore.month===calendarMonthAfter.slice(-2)||calendarYearAfter.before===calendarYearAfter.after||Object.values(inventory).some(item=>item.disabled||item.pointer==='none'||!item.hit||item.options<2)||Object.values(functional).some(item=>item.before.disabled||item.before.options<2||item.before.state===item.after.state)||Object.entries({calculator,raw,decision,activity}).some(([,item])=>item.before.disabled||item.before.pointer==='none'||!item.before.hit||item.before.options<2||item.before.state===item.after.state)||navigationDuringDecisionLoad.view!=='raw'||navigationDuringDecisionLoad.totalMs>1500||navigationDuringActivityLoad.view!=='calculator'||navigationDuringActivityLoad.switchMs>250||!navigationDuringActivityLoad.jobContinues||Object.values(additive).some(item=>!item.chosen||item.before===item.after||JSON.parse(item.after).length<2)||!reloadHash||reload.top!==reloadExpected.top||reload.raw!==reloadExpected.raw||reload.decision!==reloadExpected.decision||reload.activity!==reloadExpected.activity||reload.calculator!==reloadExpected.calculator||reload.activityOptions<2||reload.promptDisabled||!postReload.chosen||JSON.parse(postReload.after).length<3)process.exitCode=1;
 }finally{
   cdp?.close();chrome.kill();server.close();
   await wait(300);
