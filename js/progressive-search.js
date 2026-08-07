@@ -1925,7 +1925,9 @@ renderDecisionMasterView=function(){
   }
   state.rendered=visibleCount;
   decisionEnsureStableHeaderFinal();
-  if(reset){
+  if(decisionProgressiveStateIsCurrentFinal()){
+    progressiveOverviewCardsFinal('decisionOverview',decisionSummaryEntriesFinal(decisionProgressiveSearchStateFinal.summary),false);
+  }else if(reset){
     $('decisionOverview').innerHTML=decisionMasterSummaryCards(undefined,state.filteredRows);
   }
   if(state.rows.length){
@@ -2154,9 +2156,41 @@ renderRawTable=function(){
   rawStableRenderRowsFinal(state.sortedRows,null,{complete:true,state});
 };
 
+function rawResortCompletedStateFinal(state,reverseExisting){
+  municipalStopObsoleteTableJobFinal('raw','rawSearch',['rawEligibleBody','rawIneligibleBody']);
+  if(reverseExisting){
+    state.sortedRows=[...state.sortedRows].reverse();
+    state.finalPresentation={
+      ...state.finalPresentation,
+      eligible:[...state.finalPresentation.eligible].reverse(),
+      ineligible:[...state.finalPresentation.ineligible].reverse()
+    };
+  }else{
+    state.sortedRows=[...state.matches].sort(rawProgressiveCompareFinal);
+    const eligible=[],ineligible=[];
+    state.sortedRows.forEach(row=>(isRawInvalidVoteRow(row)?ineligible:eligible).push(row));
+    state.finalPresentation={...state.finalPresentation,eligible,ineligible};
+  }
+  state.key=rawProgressiveSearchKeyFinal();
+  state.visibleRows=state.matches;
+  state.previewEligible=state.finalPresentation.eligible.slice(0,rawVisibleCount(rawEligiblePage,state.finalPresentation.eligible.length));
+  state.previewIneligible=state.finalPresentation.ineligible.slice(0,rawVisibleCount(rawIneligiblePage,state.finalPresentation.ineligible.length));
+  state.revealEligible=state.previewEligible.length;
+  state.revealIneligible=state.previewIneligible.length;
+  state.complete=true;
+  state.hasPainted=false;
+  rawStableHeaderKeyFinal='';
+  rawProgressivePaintFinal(state,true);
+}
+
 setRawSort=function(column){
-  if(rawSortColumn===column)rawSortDir=rawSortDir==='asc'?'desc':'asc';
+  const previousKey=rawProgressiveSearchKeyFinal(),state=rawProgressiveSearchStateFinal;
+  const reusable=!!state?.complete&&state.key===previousKey&&!!state.finalPresentation;
+  const reverseExisting=rawSortColumn===column;
+  if(reverseExisting)rawSortDir=rawSortDir==='asc'?'desc':'asc';
   else{rawSortColumn=column;rawSortDir=column==='votes'?'desc':'asc';}
+  resetRawPage();
+  if(reusable){rawResortCompletedStateFinal(state,reverseExisting);return;}
   rawStableHeaderKeyFinal='';
   rawScheduleProgressiveFinal();
 };
