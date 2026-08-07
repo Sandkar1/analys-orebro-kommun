@@ -1209,7 +1209,10 @@ ensureDecisionDataProgressively=function(){
     await ensureDecisionDataProgressivelyBeforeSearchWarmFinal();
     decisionUpdateInitialProgressFinal(72);
     decisionStableBaseRowsFinal=null;
-    decisionProgressiveSearchStateFinal=null;
+    // Keep the already streamed table index visible while the heavier canonical
+    // protocol data is prepared. The canonical search replaces it atomically
+    // once it is ready instead of leaving the Beslut view temporarily blank.
+    if(!decisionProgressiveSearchStateFinal?.fromTableIndex)decisionProgressiveSearchStateFinal=null;
     await progressiveSearchFrameFinal(job);
     await decisionBuildPersonIndexCooperativelyFinal(job);
     decisionUpdateInitialProgressFinal(74);
