@@ -135,15 +135,16 @@ function decisionSortCompare(a,b,col=decisionSortColumn){const av=decisionSortVa
 function sortedDecisionPointRows(rows=filteredDecisionPointRows()){
   const q=typeof decisionSearchNormalizeFinal==='function'?decisionSearchNormalizeFinal(decisionSearchQuery):fuzzySearchNormalize(decisionSearchQuery);
   return [...rows].sort((a,b)=>{
-    if(q&&typeof decisionPointSearchRelevanceFinal==='function'){
+    const manualSort=typeof decisionManualSortActiveFinal==='function'&&decisionManualSortActiveFinal();
+    if(q&&!manualSort&&typeof decisionPointSearchRelevanceFinal==='function'){
       const relevance=decisionPointSearchRelevanceFinal(b,q)-decisionPointSearchRelevanceFinal(a,q);
       if(relevance)return relevance;
     }
     return decisionSortCompare(a,b);
   });
 }
-function decisionSortIndicator(col){return decisionSortColumn===col?(decisionSortDir==='asc'?' \u25b2':' \u25bc'):'';}
-function decisionSortableHeader(col,label){return `<th data-decision-sort="${esc(col)}" class="decision-sortable" role="button" tabindex="0" aria-sort="${decisionSortColumn===col?(decisionSortDir==='asc'?'ascending':'descending'):'none'}">${esc(label+decisionSortIndicator(col))}</th>`;}
+function decisionSortIndicator(col){const columnSort=typeof decisionManualSortActiveFinal!=='function'||!decisionSearchQuery||decisionManualSortActiveFinal();return columnSort&&decisionSortColumn===col?(decisionSortDir==='asc'?' \u25b2':' \u25bc'):'';}
+function decisionSortableHeader(col,label){const columnSort=typeof decisionManualSortActiveFinal!=='function'||!decisionSearchQuery||decisionManualSortActiveFinal(),active=columnSort&&decisionSortColumn===col;return `<th data-decision-sort="${esc(col)}" class="decision-sortable" role="button" tabindex="0" aria-sort="${active?(decisionSortDir==='asc'?'ascending':'descending'):'none'}">${esc(label+decisionSortIndicator(col))}</th>`;}
 function setDecisionSort(col){if(decisionSortColumn===col)decisionSortDir=decisionSortDir==='asc'?'desc':'asc';else{decisionSortColumn=col;decisionSortDir=['voteCount','yes','no','abstain','absent'].includes(col)?'desc':'asc';}resetDecisionPage();renderDecisionView();}
 
 function decisionProposalKey(row){return `${String(row?.id||'')}|p|${String(row?.point||'')}`;}
@@ -628,7 +629,7 @@ function decisionActivityDisplay(col,value){if(col==='type')return decisionActiv
 function decisionActivityIncludedByDate(row){return decisionDateMatches(row?.date||row?.questionDate||'');}
 function decisionActivityDateHtml(row){return esc(row.date||'');}
 function decisionActivityCombinedStatus(row){return row?.status||row?.organ||'';}
-function setActivitySelectOptions(id,key,values,col){const sel=$(id);if(!sel)return;const available=new Set(values.map(String));decisionActivityFilters[key]=selectedActivityValues(key).filter(v=>available.has(String(v)));const locked=new Set(decisionActivityFilters[key].map(String));sel.dataset.activityKey=key;sel.dataset.col=col;const allOption=locked.size?`<option value="" disabled selected>Välj fler...</option><option value="${decisionActivityFilterClearValueFinal}">Alla</option>`:'<option value="">Alla</option>';sel.innerHTML=[allOption,...values.filter(v=>!locked.has(String(v))).map(v=>`<option value="${esc(v)}">${esc(decisionActivityDisplay(col,v))}</option>`)].join('');sel.value='';}
+function setActivitySelectOptions(id,key,values,col){const sel=$(id);if(!sel)return;const available=new Set(values.map(String));decisionActivityFilters[key]=selectedActivityValues(key).filter(v=>available.has(String(v)));const locked=new Set(decisionActivityFilters[key].map(String));sel.dataset.activityKey=key;sel.dataset.col=col;const allOption=locked.size?`<option value="" disabled selected>Välj fler...</option><option value="${decisionActivityFilterClearValueFinal}">Alla</option>`:'<option value="">Alla</option>';sel.innerHTML=[allOption,...values.map(v=>{const chosen=locked.has(String(v)),label=decisionActivityDisplay(col,v);return `<option value="${esc(v)}" ${chosen?'disabled data-filter-selected="1"':''}>${esc(chosen?`✓ ${label} (valt)`:label)}</option>`;})].join('');sel.value='';}
 function renderActivityFilterLocks(){['decisionActivityType','decisionActivityRole','decisionActivityParty','decisionActivityPerson'].forEach(id=>{const sel=$(id);if(!sel)return;let lock=sel.parentElement.querySelector('.raw-filter-lock');const key=sel.dataset.activityKey,values=selectedActivityValues(key);if(!values.length){if(lock)lock.remove();return;}if(!lock){lock=document.createElement('div');lock.className='raw-filter-lock';sel.insertAdjacentElement('afterend',lock);}const col=sel.dataset.col;lock.innerHTML=values.map(v=>`<span class="raw-filter-chip"><span>${esc(decisionActivityDisplay(col,v))}</span><button type="button" data-value="${esc(v)}">×</button></span>`).join('');lock.querySelectorAll('button').forEach(btn=>btn.onclick=()=>{decisionActivityFilters[key]=selectedActivityValues(key).filter(v=>v!==btn.dataset.value);renderDecisionView();});});}
 function buildDecisionActivityFilters(){const rows=decisionActivityRows.filter(decisionActivityIncludedByDate),types=[...new Set(rows.map(r=>r.type).filter(Boolean))].sort(),roles=[...new Set(rows.map(r=>r.decisionRole).filter(Boolean))].sort(),parties=[...new Set(rows.map(r=>r.party).filter(Boolean))].sort(),people=[...new Set(rows.flatMap(r=>[r.questioner,r.addressedTo,r.answeredBy,r.person]).filter(Boolean))].sort();setActivitySelectOptions('decisionActivityType','type',types,'type');setActivitySelectOptions('decisionActivityRole','role',roles,'role');setActivitySelectOptions('decisionActivityParty','party',parties,'party');setActivitySelectOptions('decisionActivityPerson','person',people,'person');renderActivityFilterLocks();if($('decisionActivitySearch'))$('decisionActivitySearch').value=decisionActivitySearchQuery;}
 function handleDecisionActivityFilterChange(id){const sel=$(id),key=sel?.dataset.activityKey,value=sel?.value;if(key){if(value===decisionActivityFilterClearValueFinal)decisionActivityFilters[key]=[];else if(value){if(!selectedActivityValues(key).includes(value))decisionActivityFilters[key]=[...selectedActivityValues(key),value];}else decisionActivityFilters[key]=[];}decisionActivityActiveTab=0;renderDecisionView();}
@@ -2504,7 +2505,7 @@ decisionActivityDisplay=function(col,value){
 };
 buildDecisionActivityFilters=function(){
   syncDecisionActivityDateControls();
-  const rows=decisionActivityRows.filter(decisionActivityIncludedByDate),types=uniqueDecisionValues(rows.map(r=>r.type).filter(Boolean)),parties=uniqueDecisionValues(rows.map(r=>r.party).filter(Boolean)),politicalOwners=uniqueDecisionValues(rows.map(r=>r.politicalOwner).filter(Boolean)),officialOwners=uniqueDecisionValues(rows.map(r=>r.officialOwner).filter(Boolean));
+  const rows=decisionActivityRows,types=uniqueDecisionValues(rows.map(r=>r.type).filter(Boolean)),parties=uniqueDecisionValues(rows.map(r=>r.party).filter(Boolean)),politicalOwners=uniqueDecisionValues(rows.map(r=>r.politicalOwner).filter(Boolean)),officialOwners=uniqueDecisionValues(rows.map(r=>r.officialOwner).filter(Boolean));
   setActivitySelectOptions('decisionActivityType','type',types,'type');
   setActivitySelectOptions('decisionActivityParty','party',parties,'party');
   setActivitySelectOptions('decisionActivityPoliticalOwner','politicalOwner',politicalOwners,'politicalOwner');
@@ -3109,7 +3110,8 @@ setDecisionSelectOptions=function(id,values,selected=[],col='',allLabel='Alla'){
   const sel=$(id);
   if(!sel||!selectedDecisionValues(id).length)return;
   const options=[...sel.options].slice(1).map(option=>option.outerHTML).join('');
-  sel.innerHTML=`<option value="${decisionFilterPromptValueFinal}" selected>Välj fler...</option><option value="${decisionFilterClearValueFinal}">${esc(allLabel)}</option>${options}`;
+  const chosen=selectedDecisionValues(id).map(value=>`<option value="${esc(value)}" disabled data-filter-selected="1">${esc(`✓ ${decisionDisplay(col,value)} (valt)`)}</option>`).join('');
+  sel.innerHTML=`<option value="${decisionFilterPromptValueFinal}" selected>Välj fler...</option><option value="${decisionFilterClearValueFinal}">${esc(allLabel)}</option>${chosen}${options}`;
   sel.value=decisionFilterPromptValueFinal;
 };
 

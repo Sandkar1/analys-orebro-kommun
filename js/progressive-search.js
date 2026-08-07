@@ -656,9 +656,31 @@ progressiveSearchHandlersFinal.set('raw',async job=>{
    existing filters, vote aggregation, relevance sort, and row renderer use it. */
 const decisionPointSearchMatchesBeforeProgressiveFinal=decisionPointSearchMatches;
 let decisionProgressiveSearchStateFinal=null;
+let decisionManualSortContextFinal='';
+let decisionActivityManualSortContextFinal='';
 
 function decisionProgressiveSearchKeyFinal(){
   return decisionSearchNormalizeFinal(decisionSearchQuery);
+}
+
+function decisionCurrentSortContextFinal(){
+  return JSON.stringify([decisionProgressiveSearchKeyFinal(),decisionStableBaseFilterKeyFinal()]);
+}
+
+function decisionManualSortActiveFinal(){
+  return !!decisionManualSortContextFinal&&decisionManualSortContextFinal===decisionCurrentSortContextFinal();
+}
+
+function decisionActivityManualSortActiveFinal(){
+  return !!decisionActivityManualSortContextFinal&&decisionActivityManualSortContextFinal===decisionActivityProgressiveSearchKeyFinal();
+}
+
+function decisionSearchSortCompareFinal(a,b,query){
+  if(query&&!decisionManualSortActiveFinal()){
+    const relevance=decisionPointSearchRelevanceFinal(b,query)-decisionPointSearchRelevanceFinal(a,query);
+    if(relevance)return relevance;
+  }
+  return decisionSortCompare(a,b);
 }
 
 decisionPointSearchMatches=function(row){
@@ -717,7 +739,7 @@ progressiveSearchHandlersFinal.set('decision-activity',async job=>{
     officialOwners:selectedActivityValues('officialOwner')
   };
   const compare=(a,b)=>{
-    if(query){
+    if(query&&!decisionActivityManualSortActiveFinal()){
       const relevance=decisionActivitySearchRelevanceFinal(b,query)-decisionActivitySearchRelevanceFinal(a,query);
       if(relevance)return relevance;
     }
@@ -1257,39 +1279,36 @@ function decisionStableBaseFilterKeyFinal(){
 
 function decisionFilterOptionsKeyFinal(){
   return JSON.stringify([
-    decisionDateRanges.map(range=>[range.from,range.to]),
-    selectedDecisionValues('decisionOrgan'),selectedDecisionValues('decisionParty'),
-    decisionAllPointRows.length,decisionRows.length,decisionMemberRows.length
+    decisionAllPointRows.length,decisionRows.length,decisionPositionRows.length,decisionMemberRows.length
   ]);
 }
 
 async function decisionBuildFilterOptionsFinal(job){
   const key=decisionFilterOptionsKeyFinal();
   if(decisionFilterOptionsCacheFinal?.key===key)return decisionFilterOptionsCacheFinal.options;
-  const selectedOrgans=selectedDecisionValues('decisionOrgan'),selectedParties=selectedDecisionValues('decisionParty');
   const types=new Set(),organs=new Set(),parties=new Set(),members=new Set(),votes=new Set(),results=new Set();
   let started=performance.now();
   for(const row of decisionAllPointRows){
-    if(decisionDateMatches(row.date)){
-      if(row.proposalType)types.add(row.proposalType);
-      if(row.body)organs.add(row.body);
-      results.add(decisionResultFilterGroup(row.result||'beslut'));
-    }
+    if(row.proposalType)types.add(row.proposalType);
+    if(row.body)organs.add(row.body);
+    results.add(decisionResultFilterGroup(row.result||'beslut'));
     if(progressiveSliceExpiredFinal(started,3)){if(!await progressiveSearchFrameFinal(job))return null;started=performance.now();}
   }
   for(const row of decisionRows){
-    if(decisionDateMatches(row.date)){
-      if(row.party)parties.add(row.party);
-      if(row.vote)votes.add(row.vote);
-      if(row.name&&(!selectedParties.length||selectedParties.includes(municipalNorm(row.party))))members.add(decisionMemberKey(row.name,row.party));
-    }
+    if(row.party)parties.add(row.party);
+    if(row.vote)votes.add(row.vote);
+    if(row.name)members.add(decisionMemberKey(row.name,row.party));
+    if(progressiveSliceExpiredFinal(started,3)){if(!await progressiveSearchFrameFinal(job))return null;started=performance.now();}
+  }
+  for(const row of decisionPositionRows){
+    if(row.party)parties.add(row.party);
+    if(row.vote)votes.add(row.vote);
+    if(row.name)members.add(decisionMemberKey(row.name,row.party));
     if(progressiveSliceExpiredFinal(started,3)){if(!await progressiveSearchFrameFinal(job))return null;started=performance.now();}
   }
   for(const row of decisionMemberRows){
-    if(decisionDateMatches(row.date)&&(!selectedOrgans.length||selectedOrgans.includes(municipalNorm(row.body)))){
-      if(row.party)parties.add(row.party);
-      if(row.name&&(!selectedParties.length||selectedParties.includes(municipalNorm(row.party))))members.add(row.memberKey||decisionMemberKey(row.name,row.party));
-    }
+    if(row.party)parties.add(row.party);
+    if(row.name)members.add(row.memberKey||decisionMemberKey(row.name,row.party));
     if(progressiveSliceExpiredFinal(started,3)){if(!await progressiveSearchFrameFinal(job))return null;started=performance.now();}
   }
   const options={
@@ -1371,7 +1390,7 @@ let decisionStableHeaderKeyFinal='';
 function decisionEnsureStableHeaderFinal(){
   const head=$('decisionHead');
   if(!head)return;
-  const key=`${decisionSortColumn}|${decisionSortDir}`;
+  const key=`${decisionSortColumn}|${decisionSortDir}|${decisionProgressiveSearchKeyFinal()&&!decisionManualSortActiveFinal()?'relevance':'column'}`;
   if(decisionStableHeaderKeyFinal===key&&head.children.length)return;
   decisionStableHeaderKeyFinal=key;
   head.innerHTML=`<tr>${decisionSortableHeader('date','Datum')}${decisionSortableHeader('title','Organ')}${decisionSortableHeader('pointTitle','Ärende')}${decisionSortableHeader('result','Resultat')}${decisionSortableHeader('voteRoundCount','Voteringar')}${decisionSortableHeader('voteCount','Röstning')}${decisionSortableHeader('yes','Ja')}${decisionSortableHeader('no','Nej')}${decisionSortableHeader('abstain','Avstår')}${decisionSortableHeader('absent','Frånvarande')}<th>Källa</th></tr>`;
@@ -1486,10 +1505,7 @@ function decisionTableIndexPredicateFinal(row,query){
 async function decisionRunTableIndexJobFinal(job){
   const query=decisionProgressiveSearchKeyFinal(),baseFilterKey=decisionStableBaseFilterKeyFinal();
   const sortKey=`${decisionSortColumn}|${decisionSortDir}|${decisionPageSize()}`;
-  const compare=(a,b)=>{
-    if(query){const relevance=decisionPointSearchRelevanceFinal(b,query)-decisionPointSearchRelevanceFinal(a,query);if(relevance)return relevance;}
-    return decisionSortCompare(a,b);
-  };
+  const compare=(a,b)=>decisionSearchSortCompareFinal(a,b,query);
   const state={fromTableIndex:true,key:query,baseFilterKey,sortKey,dataKey:'table-index',matches:new Set(),filteredMatches:[],previewRows:[],sortedRows:[],summary:decisionSummaryAccumulatorFinal(),index:0,total:decisionTableIndexTotalFinal,progressIndex:0,progressTotal:decisionTableIndexTotalFinal,complete:true,finished:false,initialLoad:!decisionInitialLoadCompleteFinal&&!query,hasPainted:false,paintPending:false,revealCount:0};
   decisionProgressiveSearchStateFinal=state;
   decisionListTab().page=0;
@@ -1554,10 +1570,7 @@ progressiveSearchHandlersFinal.set('decision',async job=>{
   const baseFilterKey=decisionStableBaseFilterKeyFinal();
   const dataKey=`${decisionAllPointRows.length}|${decisionRows.length}|${decisionMemberRows.length}`;
   const sortKey=`${decisionSortColumn}|${decisionSortDir}|${decisionPageSize()}`;
-  const compare=(a,b)=>{
-    if(query){const relevance=decisionPointSearchRelevanceFinal(b,query)-decisionPointSearchRelevanceFinal(a,query);if(relevance)return relevance;}
-    return decisionSortCompare(a,b);
-  };
+  const compare=(a,b)=>decisionSearchSortCompareFinal(a,b,query);
   const state={key:query,baseFilterKey,sortKey,dataKey,matches:new Set(),filteredMatches:[],previewRows:[],sortedRows:[],summary:decisionSummaryAccumulatorFinal(),index:0,total:decisionAllPointRows.length,progressIndex:0,progressTotal:decisionAllPointRows.length,complete:true,finished:false,initialLoad:!decisionInitialLoadCompleteFinal,hasPainted:false,paintPending:false,revealCount:0};
   decisionProgressiveSearchStateFinal=state;
   decisionListTab().page=0;
@@ -2297,11 +2310,15 @@ let decisionActivityStableHeaderKeyFinal='';
 function decisionActivityEnsureStableHeaderFinal(){
   const head=$('decisionActivityHead');
   if(!head)return;
-  const key=`${decisionActivitySortColumn}|${decisionActivitySortDir}`;
+  const activityQuery=decisionSearchNormalizeFinal(decisionActivitySearchQuery);
+  const key=`${decisionActivitySortColumn}|${decisionActivitySortDir}|${activityQuery&&!decisionActivityManualSortActiveFinal()?'relevance':'column'}`;
   if(decisionActivityStableHeaderKeyFinal===key&&head.children.length)return;
   decisionActivityStableHeaderKeyFinal=key;
   head.innerHTML=`<tr>${decisionActivitySortableHeader('date','Datum')}${decisionActivitySortableHeader('type','Dokumenttyp')}${decisionActivitySortableHeader('title','Titel')}${decisionActivitySortableHeader('summary','Sammanfattning')}${decisionActivitySortableHeader('points','Viktigt')}${decisionActivitySortableHeader('party','Område/organ')}<th>Källa</th></tr>`;
-  head.querySelectorAll('[data-activity-sort]').forEach(header=>header.onclick=()=>setDecisionActivitySort(header.dataset.activitySort));
+  head.querySelectorAll('[data-activity-sort]').forEach(header=>{
+    header.onclick=()=>setDecisionActivitySort(header.dataset.activitySort);
+    header.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();setDecisionActivitySort(header.dataset.activitySort);}};
+  });
 }
 
 function decisionActivityBindStableEventsFinal(){
@@ -2362,10 +2379,7 @@ function decisionPaintTableBootstrapImmediatelyFinal(){
   if(decisionProgressiveSearchStateFinal||!decisionTableIndexRowsFinal.length)return;
   const query=decisionProgressiveSearchKeyFinal(),baseFilterKey=decisionStableBaseFilterKeyFinal();
   const sortKey=`${decisionSortColumn}|${decisionSortDir}|${decisionPageSize()}`;
-  const compare=(a,b)=>{
-    if(query){const relevance=decisionPointSearchRelevanceFinal(b,query)-decisionPointSearchRelevanceFinal(a,query);if(relevance)return relevance;}
-    return decisionSortCompare(a,b);
-  };
+  const compare=(a,b)=>decisionSearchSortCompareFinal(a,b,query);
   const state={fromTableIndex:true,key:query,baseFilterKey,sortKey,dataKey:'table-index',matches:new Set(),filteredMatches:[],previewRows:[],sortedRows:[],summary:decisionSummaryAccumulatorFinal(),index:decisionTableIndexRowsFinal.length,total:decisionTableIndexTotalFinal,progressIndex:decisionTableIndexRowsFinal.length,progressTotal:decisionTableIndexTotalFinal,complete:true,finished:false,initialLoad:true,hasPainted:false,paintPending:false,revealCount:0};
   for(const row of decisionTableIndexRowsFinal){
     if(!decisionTableIndexPredicateFinal(row,query))continue;
@@ -2469,6 +2483,7 @@ handleDecisionActivityFilterChange=function(id){
     else if(value&&!selectedActivityValues(key).includes(value))decisionActivityFilters[key]=[...selectedActivityValues(key),value];
     else if(!value)decisionActivityFilters[key]=[];
   }
+  decisionActivityManualSortContextFinal='';
   decisionActivityActiveTab=0;
   resetDecisionActivityPage();
   renderDecisionActivityView();
@@ -2528,6 +2543,7 @@ handleDecisionFilterChange=function(id){
   if(value===decisionFilterClearValueFinal)decisionFilterLocks[id]=[];
   else if(value&&!selectedDecisionValues(id).includes(value))decisionFilterLocks[id]=[...selectedDecisionValues(id),value];
   else if(!value)decisionFilterLocks[id]=[];
+  decisionManualSortContextFinal='';
   renderDecisionFilterLocks();
   decisionScheduleProgressiveRefreshFinal();
 };
@@ -2571,9 +2587,41 @@ renderDecisionDateLocks=function(){
 };
 
 setDecisionSort=function(column){
-  if(decisionSortColumn===column)decisionSortDir=decisionSortDir==='asc'?'desc':'asc';
-  else{decisionSortColumn=column;decisionSortDir=['voteRoundCount','voteCount','yes','no','abstain','absent'].includes(column)?'desc':'asc';}
+  const sameManualSort=decisionManualSortActiveFinal()&&decisionSortColumn===column;
+  decisionSortColumn=column;
+  decisionSortDir=sameManualSort?(decisionSortDir==='asc'?'desc':'asc'):(['voteRoundCount','voteCount','yes','no','abstain','absent'].includes(column)?'desc':'asc');
+  decisionManualSortContextFinal=decisionCurrentSortContextFinal();
+  decisionActiveTab=0;
+  resetDecisionPage();
+  const state=decisionProgressiveSearchStateFinal;
+  if(state?.finished&&state.key===decisionProgressiveSearchKeyFinal()&&state.baseFilterKey===decisionStableBaseFilterKeyFinal()){
+    state.sortKey=`${decisionSortColumn}|${decisionSortDir}|${decisionPageSize()}`;
+    state.sortedRows=[...state.filteredMatches].sort((a,b)=>decisionSortCompare(a,b));
+    state.previewRows=state.sortedRows.slice(0,decisionPageSize());
+    state.revealCount=decisionVisibleCount(decisionListTab().page||0,state.sortedRows.length);
+    decisionStableListRenderFinal=null;
+    decisionProgressivePaintRankedFinal(state,true);
+    return;
+  }
   decisionScheduleProgressiveRefreshFinal();
+};
+
+setDecisionActivitySort=function(column){
+  const sameManualSort=decisionActivityManualSortActiveFinal()&&decisionActivitySortColumn===column;
+  decisionActivitySortColumn=column;
+  decisionActivitySortDir=sameManualSort?(decisionActivitySortDir==='asc'?'desc':'asc'):'asc';
+  decisionActivityManualSortContextFinal=decisionActivityProgressiveSearchKeyFinal();
+  decisionActivityActiveTab=0;
+  resetDecisionActivityPage();
+  const state=decisionActivityProgressiveSearchStateFinal;
+  if(state?.complete&&state.key===decisionActivityProgressiveSearchKeyFinal()){
+    state.sortedRows=[...state.visibleRows].sort((a,b)=>decisionActivitySortCompare(a,b));
+    state.previewRows=state.sortedRows.slice(0,decisionVisibleCount(0,state.sortedRows.length));
+    decisionActivityStableHeaderKeyFinal='';
+    decisionActivityStableRenderRowsFinal(state.visibleRows,state.sortedRows,{complete:true,state});
+    return;
+  }
+  renderDecisionActivityView();
 };
 
 setDecisionPageSize=function(size){
@@ -2672,4 +2720,173 @@ setActivitySelectOptions=function(...args){
   };
   if(municipalDeferFocusedSelectRefreshFinal(id,refresh))return;
   return refresh();
+};
+
+const municipalActivitySelectKeysFinal=new Map();
+const setActivitySelectOptionsBeforeStableInventoryFinal=setActivitySelectOptions;
+setActivitySelectOptions=function(id,key,values,col){
+  const signature=JSON.stringify([values,selectedActivityValues(key),col]);
+  if(municipalActivitySelectKeysFinal.get(id)===signature)return;
+  municipalActivitySelectKeysFinal.set(id,signature);
+  return setActivitySelectOptionsBeforeStableInventoryFinal(id,key,values,col);
+};
+
+/* Completed table states are immutable views over already loaded records.
+   Keep a small LRU of those views so removing a filter or returning to a
+   recent search restores it immediately instead of traversing every record
+   again. The records themselves are shared; only lightweight row arrays and
+   counters are retained. */
+function municipalMemoSetFinal(cache,key,value,limit=8){
+  if(cache.has(key))cache.delete(key);
+  cache.set(key,value);
+  while(cache.size>limit)cache.delete(cache.keys().next().value);
+}
+
+function municipalMemoGetFinal(cache,key){
+  if(!key||!cache.has(key))return null;
+  const value=cache.get(key);
+  cache.delete(key);
+  cache.set(key,value);
+  return value;
+}
+
+function municipalCloneSummaryFinal(summary){
+  return Object.fromEntries(Object.entries(summary||{}).map(([key,value])=>[key,value instanceof Set?new Set(value):value]));
+}
+
+const decisionBaseRowsMemoFinal=new Map();
+const decisionStableBuildBaseRowsBeforeMemoFinal=decisionStableBuildBaseRowsFinal;
+decisionStableBuildBaseRowsFinal=async function(job){
+  const dataKey=`${decisionAllPointRows.length}|${decisionRows.length}|${decisionMemberRows.length}`;
+  const key=`${dataKey}|${decisionStableBaseFilterKeyFinal()}`;
+  const cached=municipalMemoGetFinal(decisionBaseRowsMemoFinal,key);
+  if(cached)return cached;
+  const rows=await decisionStableBuildBaseRowsBeforeMemoFinal(job);
+  if(rows&&!job.cancelled)municipalMemoSetFinal(decisionBaseRowsMemoFinal,key,rows,10);
+  return rows;
+};
+
+const decisionResultMemoFinal=new Map();
+const activityResultMemoFinal=new Map();
+const rawResultMemoFinal=new Map();
+
+function decisionResultMemoKeyFinal(){
+  let source='';
+  if(decisionShouldUseTableIndexFinal()){
+    if(!decisionTableIndexCompleteFinal)return '';
+    source=`index:${decisionTableIndexRowsFinal.length}:${decisionTableIndexTotalFinal}`;
+  }else{
+    if(!decisionCanonicalPreparationReadyFinal())return '';
+    source=`canonical:${decisionAllPointRows.length}:${decisionRows.length}:${decisionMemberRows.length}`;
+  }
+  return `${source}|${decisionProgressiveSearchKeyFinal()}|${decisionStableBaseFilterKeyFinal()}`;
+}
+
+function activityResultMemoKeyFinal(){
+  return `${decisionActivityRows.length}|${decisionActivityProgressiveSearchKeyFinal()}`;
+}
+
+function rawResultMemoKeyFinal(){
+  return rawReady?`${rawRows.length}|${rawProgressiveSearchKeyFinal()}`:'';
+}
+
+function decisionResultSortModeFinal(){
+  const query=decisionProgressiveSearchKeyFinal();
+  return query&&!decisionManualSortActiveFinal()?'relevance':`${decisionSortColumn}|${decisionSortDir}`;
+}
+
+function activityResultSortModeFinal(){
+  const query=decisionSearchNormalizeFinal(decisionActivitySearchQuery);
+  return query&&!decisionActivityManualSortActiveFinal()?'relevance':`${decisionActivitySortColumn}|${decisionActivitySortDir}`;
+}
+
+function municipalStopObsoleteTableJobFinal(key,inputId,tableIds){
+  const job=progressiveSearchJobsFinal.get(key);
+  if(job){job.cancelled=true;if(job.frame)cancelAnimationFrame(job.frame);progressiveSearchJobsFinal.delete(key);}
+  setTableSearchBusy(inputId,tableIds,false);
+  progressiveSearchWrapsFinal(tableIds,false);
+}
+
+function decisionRestoreMemoFinal(){
+  const key=decisionResultMemoKeyFinal(),cached=municipalMemoGetFinal(decisionResultMemoFinal,key);
+  if(!cached)return false;
+  const query=decisionProgressiveSearchKeyFinal(),rows=[...cached.filteredMatches];
+  const sorted=cached.sortMode===decisionResultSortModeFinal()?[...cached.sortedRows]:[...rows].sort((a,b)=>decisionSearchSortCompareFinal(a,b,query));
+  const state={
+    fromTableIndex:cached.fromTableIndex,key:query,baseFilterKey:decisionStableBaseFilterKeyFinal(),
+    sortKey:`${decisionSortColumn}|${decisionSortDir}|${decisionPageSize()}`,dataKey:cached.dataKey,
+    matches:new Set(cached.matches),filteredMatches:rows,previewRows:[],sortedRows:sorted,
+    summary:municipalCloneSummaryFinal(cached.summary),index:cached.total,total:cached.total,progressIndex:cached.total,progressTotal:cached.total,
+    complete:true,finished:true,initialLoad:false,hasPainted:false,paintPending:false,revealCount:0
+  };
+  state.previewRows=state.sortedRows.slice(0,decisionPageSize());
+  state.revealCount=decisionVisibleCount(decisionListTab().page||0,state.sortedRows.length);
+  decisionProgressiveSearchStateFinal=state;
+  decisionStableListRenderFinal=null;
+  municipalStopObsoleteTableJobFinal('decision','decisionDecisionSearch',['decisionBody']);
+  decisionProgressivePaintRankedFinal(state,true);
+  return true;
+}
+
+function activityRestoreMemoFinal(){
+  const key=activityResultMemoKeyFinal(),cached=municipalMemoGetFinal(activityResultMemoFinal,key);
+  if(!cached)return false;
+  const rows=[...cached.rows],sorted=cached.sortMode===activityResultSortModeFinal()?[...cached.sortedRows]:[...rows].sort((a,b)=>{
+    const query=decisionSearchNormalizeFinal(decisionActivitySearchQuery);
+    if(query&&!decisionActivityManualSortActiveFinal()){
+      const relevance=decisionActivitySearchRelevanceFinal(b,query)-decisionActivitySearchRelevanceFinal(a,query);
+      if(relevance)return relevance;
+    }
+    return decisionActivitySortCompare(a,b);
+  });
+  const state={key:decisionActivityProgressiveSearchKeyFinal(),matches:rows,visibleRows:rows,previewRows:sorted.slice(0,decisionVisibleCount(0,sorted.length)),sortedRows:sorted,summary:municipalCloneSummaryFinal(cached.summary),index:decisionActivityRows.length,total:decisionActivityRows.length,initialLoad:false,hasPainted:false,pointerDown:false,paintPending:false,revealCount:decisionVisibleCount((decisionActivityTabs[0]||{page:0}).page||0,sorted.length),complete:true};
+  decisionActivityProgressiveSearchStateFinal=state;
+  municipalStopObsoleteTableJobFinal('decision-activity','decisionActivitySearch',['decisionActivityBody']);
+  decisionActivityProgressivePaintFinal(state,true);
+  return true;
+}
+
+function rawRestoreMemoFinal(){
+  const key=rawResultMemoKeyFinal(),cached=municipalMemoGetFinal(rawResultMemoFinal,key);
+  if(!cached)return false;
+  const state={...cached,key:rawProgressiveSearchKeyFinal(),matches:[...cached.matches],visibleRows:[...cached.matches],sortedRows:[...cached.sortedRows],previewEligible:[...cached.previewEligible],previewIneligible:[...cached.previewIneligible],summary:municipalCloneSummaryFinal(cached.summary),finalPresentation:{...cached.finalPresentation,eligible:[...cached.finalPresentation.eligible],ineligible:[...cached.finalPresentation.ineligible]},initialLoad:false,hasPainted:false,pointerDown:false,paintPending:false,complete:true};
+  rawProgressiveSearchStateFinal=state;
+  municipalStopObsoleteTableJobFinal('raw','rawSearch',['rawEligibleBody','rawIneligibleBody']);
+  rawProgressivePaintFinal(state,true);
+  return true;
+}
+
+const decisionProgressiveHandlerBeforeMemoFinal=progressiveSearchHandlersFinal.get('decision');
+progressiveSearchHandlersFinal.set('decision',async job=>{
+  await decisionProgressiveHandlerBeforeMemoFinal(job);
+  const state=decisionProgressiveSearchStateFinal,key=decisionResultMemoKeyFinal();
+  if(!job.cancelled&&key&&state?.finished&&state.key===decisionProgressiveSearchKeyFinal()&&state.baseFilterKey===decisionStableBaseFilterKeyFinal()){
+    municipalMemoSetFinal(decisionResultMemoFinal,key,{fromTableIndex:!!state.fromTableIndex,dataKey:state.dataKey,total:state.total,matches:[...state.matches],filteredMatches:[...state.filteredMatches],sortedRows:[...state.sortedRows],sortMode:decisionResultSortModeFinal(),summary:municipalCloneSummaryFinal(state.summary)},8);
+  }
+});
+
+const activityProgressiveHandlerBeforeMemoFinal=progressiveSearchHandlersFinal.get('decision-activity');
+progressiveSearchHandlersFinal.set('decision-activity',async job=>{
+  await activityProgressiveHandlerBeforeMemoFinal(job);
+  const state=decisionActivityProgressiveSearchStateFinal,key=activityResultMemoKeyFinal();
+  if(!job.cancelled&&state?.complete&&state.key===decisionActivityProgressiveSearchKeyFinal()){
+    municipalMemoSetFinal(activityResultMemoFinal,key,{rows:[...state.visibleRows],sortedRows:[...state.sortedRows],sortMode:activityResultSortModeFinal(),summary:municipalCloneSummaryFinal(state.summary)},10);
+  }
+});
+
+const rawProgressiveHandlerBeforeMemoFinal=progressiveSearchHandlersFinal.get('raw');
+progressiveSearchHandlersFinal.set('raw',async job=>{
+  await rawProgressiveHandlerBeforeMemoFinal(job);
+  const state=rawProgressiveSearchStateFinal,key=rawResultMemoKeyFinal();
+  if(!job.cancelled&&key&&state?.complete&&state.key===rawProgressiveSearchKeyFinal()&&state.finalPresentation){
+    municipalMemoSetFinal(rawResultMemoFinal,key,{matches:[...state.matches],sortedRows:[...state.sortedRows],previewEligible:[...state.previewEligible],previewIneligible:[...state.previewIneligible],summary:municipalCloneSummaryFinal(state.summary),finalPresentation:{...state.finalPresentation,eligible:[...state.finalPresentation.eligible],ineligible:[...state.finalPresentation.ineligible]},index:state.index,total:state.total,revealEligible:state.revealEligible,revealIneligible:state.revealIneligible},6);
+  }
+});
+
+const scheduleTableSearchBeforeMemoFinal=scheduleTableSearch;
+scheduleTableSearch=function(key,inputId,tableIds,render){
+  if(key==='decision'&&decisionRestoreMemoFinal())return;
+  if(key==='decision-activity'&&activityRestoreMemoFinal())return;
+  if(key==='raw'&&rawRestoreMemoFinal())return;
+  return scheduleTableSearchBeforeMemoFinal(key,inputId,tableIds,render);
 };

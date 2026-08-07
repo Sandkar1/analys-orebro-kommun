@@ -570,41 +570,43 @@ button,
 
 .calc-template-intro[hidden],
 .calc-import-tools[hidden],
-.calc-import-menu[hidden]{
+.calc-import-menu[hidden],
+#calcActions[hidden]{
   display:none;
 }
 
 .calc-import-tools{
   display:flex;
-  flex-direction:column;
-  align-items:flex-end;
-  gap:7px;
-  margin:-4px 0 8px;
+  justify-content:flex-end;
+  margin:-3px 0 8px;
 }
 
-.calc-import-toggle,
+.calc-import-menu{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  justify-content:flex-end;
+  gap:6px;
+  max-width:100%;
+  color:var(--muted);
+  font-size:12px;
+}
+
+.calc-import-menu select{
+  width:auto;
+  max-width:min(280px,100%);
+  min-width:0;
+  min-height:32px;
+  padding-block:5px;
+  font-size:12px;
+}
+
+.calc-import-menu button,
 .calc-add-row{
   min-height:30px;
   padding:5px 9px;
   font-size:12px;
   font-weight:720;
-}
-
-.calc-import-menu{
-  display:grid;
-  grid-template-columns:auto minmax(180px,300px) auto;
-  align-items:center;
-  gap:7px;
-  max-width:100%;
-  padding:8px;
-  border:1px solid var(--line);
-  border-radius:var(--radius);
-  background:var(--cream-raised);
-  box-shadow:var(--shadow-control);
-}
-
-.calc-import-menu select{
-  min-width:0;
 }
 
 .calc-add-row-wrap{
@@ -4183,17 +4185,14 @@ table:not(.input-table) .decision-selectable-row:nth-child(even):hover td{
     align-items:stretch;
   }
 
-  .calc-import-toggle{
-    align-self:flex-end;
-  }
-
   .calc-import-menu{
-    grid-template-columns:1fr;
+    justify-content:flex-start;
   }
 
   .calc-import-menu button,
   .calc-import-menu select{
-    width:100%;
+    width:auto;
+    max-width:100%;
   }
 
   .raw-page-size-options,

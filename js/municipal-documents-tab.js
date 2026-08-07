@@ -139,7 +139,7 @@ function setActivitySelectOptions(id,key,values,col){
   sel.dataset.activityKey=key;
   sel.dataset.col=col;
   const allOption=locked.size?`<option value="${decisionActivityFilterPromptValueFinal}" selected>Välj fler...</option><option value="${decisionActivityFilterClearValueFinal}">Alla</option>`:'<option value="">Alla</option>';
-  sel.innerHTML=[allOption,...values.filter(value=>!locked.has(String(value))).map(value=>`<option value="${esc(value)}">${esc(decisionActivityDisplay(col,value))}</option>`)].join('');
+  sel.innerHTML=[allOption,...values.map(value=>{const chosen=locked.has(String(value)),label=decisionActivityDisplay(col,value);return `<option value="${esc(value)}" ${chosen?'disabled data-filter-selected="1"':''}>${esc(chosen?`✓ ${label} (valt)`:label)}</option>`;})].join('');
   sel.value=locked.size?decisionActivityFilterPromptValueFinal:'';
 }
 
@@ -186,7 +186,7 @@ function renderActivityFilterLocks(){
 function buildDecisionActivityFilters(){
   ensureMunicipalDocumentData();
   syncDecisionActivityDateControls();
-  const rows=decisionActivityRows.filter(decisionActivityIncludedByDate);
+  const rows=decisionActivityRows;
   const types=uniqueDecisionValues(rows.map(row=>row.type).filter(Boolean));
   const parties=uniqueDecisionValues(rows.map(row=>row.party).filter(Boolean));
   const politicalOwners=uniqueDecisionValues(rows.map(row=>row.politicalOwner).filter(Boolean));
@@ -268,7 +268,8 @@ function decisionActivitySortCompare(a,b,col=decisionActivitySortColumn){
 function sortedDecisionActivityRows(rows=filteredDecisionActivityRows()){
   const q=decisionSearchNormalizeFinal(decisionActivitySearchQuery);
   return [...rows].sort((a,b)=>{
-    if(q){
+    const manualSort=typeof decisionActivityManualSortActiveFinal==='function'&&decisionActivityManualSortActiveFinal();
+    if(q&&!manualSort){
       const relevance=decisionActivitySearchRelevanceFinal(b,q)-decisionActivitySearchRelevanceFinal(a,q);
       if(relevance)return relevance;
     }
@@ -277,11 +278,13 @@ function sortedDecisionActivityRows(rows=filteredDecisionActivityRows()){
 }
 
 function decisionActivitySortIndicator(col){
-  return decisionActivitySortColumn===col?(decisionActivitySortDir==='asc'?' ▲':' ▼'):'';
+  const columnSort=typeof decisionActivityManualSortActiveFinal!=='function'||!decisionActivitySearchQuery||decisionActivityManualSortActiveFinal();
+  return columnSort&&decisionActivitySortColumn===col?(decisionActivitySortDir==='asc'?' ▲':' ▼'):'';
 }
 
 function decisionActivitySortableHeader(col,label){
-  return `<th data-activity-sort="${esc(col)}" class="decision-sortable" role="button" tabindex="0">${esc(label+decisionActivitySortIndicator(col))}</th>`;
+  const columnSort=typeof decisionActivityManualSortActiveFinal!=='function'||!decisionActivitySearchQuery||decisionActivityManualSortActiveFinal(),active=columnSort&&decisionActivitySortColumn===col;
+  return `<th data-activity-sort="${esc(col)}" class="decision-sortable" role="button" tabindex="0" aria-sort="${active?(decisionActivitySortDir==='asc'?'ascending':'descending'):'none'}">${esc(label+decisionActivitySortIndicator(col))}</th>`;
 }
 
 function setDecisionActivitySort(col){
@@ -619,6 +622,7 @@ function bindMunicipalDocumentsTabControls(){
   $('decisionActivityOfficialOwner').onchange=()=>handleDecisionActivityFilterChange('decisionActivityOfficialOwner');
   $('decisionActivitySearch').oninput=event=>{
     decisionActivitySearchQuery=event.target.value;
+    decisionActivityManualSortContextFinal='';
     resetDecisionActivityPage();
     scheduleTableSearch('decision-activity','decisionActivitySearch',['decisionActivityBody'],()=>renderDecisionActivityView());
   };
