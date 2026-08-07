@@ -102,6 +102,25 @@ function scheduleDecisionViewMountAfterPaint(){
     if(currentTopView()==='decision')startDecisionViewMount();
   }));
 }
+let sessionDataPreloadStartedFinal=false,sessionDataPreloadPromiseFinal=null;
+function startSessionDataPreloadFinal(){
+  if(sessionDataPreloadPromiseFinal)return sessionDataPreloadPromiseFinal;
+  sessionDataPreloadStartedFinal=true;
+  const historic=Promise.resolve().then(()=>ensureRawData());
+  const documents=Promise.resolve().then(()=>{
+    ensureMunicipalDocumentData();
+    scheduleTableSearch('decision-activity','decisionActivitySearch',['decisionActivityBody'],()=>renderDecisionActivityView());
+  });
+  const decisions=Promise.resolve().then(()=>startDecisionViewMount()).then(()=>ensureDecisionCanonicalDataFinal()).then(()=>{
+    decisionStableBaseRowsFinal=null;
+    decisionScheduleProgressiveRefreshFinal();
+  });
+  sessionDataPreloadPromiseFinal=Promise.allSettled([historic,documents,decisions]);
+  return sessionDataPreloadPromiseFinal;
+}
+function scheduleSessionDataPreloadFinal(){
+  requestAnimationFrame(()=>requestAnimationFrame(()=>startSessionDataPreloadFinal()));
+}
 function resumeRawBackgroundLoadFinal(activeView){
   setUiRegionBusy(activeView,true);
   const state=typeof rawProgressiveSearchStateFinal==='undefined'?null:rawProgressiveSearchStateFinal;
@@ -175,7 +194,7 @@ async function initAppFromUrlHash(){
   }
   // Municipal datasets are loaded on demand after their table shell has painted.
 }
-initAppFromUrlHash();
+initAppFromUrlHash().finally(scheduleSessionDataPreloadFinal);
 
 
 

@@ -125,9 +125,11 @@ function municipalDocumentActivityRowsEnrichedFinal(){
 }
 
 function ensureMunicipalDocumentData(){
-  ensureDecisionData();
   const documentRows=municipalDocumentActivityRowsEnrichedFinal();
-  if(documentRows.length)decisionActivityRows=documentRows;
+  if(documentRows.length){decisionActivityRows=documentRows;return;}
+  ensureDecisionData();
+  const protocolRows=municipalDocumentActivityRowsEnrichedFinal();
+  if(protocolRows.length)decisionActivityRows=protocolRows;
 }
 
 function setActivitySelectOptions(id,key,values,col){

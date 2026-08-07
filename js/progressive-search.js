@@ -1516,7 +1516,7 @@ async function decisionRunTableIndexJobFinal(job){
   decisionProgressiveSearchStateFinal=state;
   decisionListTab().page=0;
   decisionProgressivePaintRankedFinal(state,false);
-  let lastPaint=performance.now(),revision=decisionTableIndexRevisionFinal;
+  let lastPaint=performance.now(),lastOverviewPaint=lastPaint,revision=decisionTableIndexRevisionFinal;
   while(!job.cancelled){
     state.total=decisionTableIndexTotalFinal||state.total;
     state.progressTotal=state.total;
@@ -1539,11 +1539,20 @@ async function decisionRunTableIndexJobFinal(job){
       const visibleTarget=Math.min(decisionPageSize(),state.previewRows.length),needsMoreVisibleRows=state.revealCount<visibleTarget;
       if(!state.hasPainted||(matchChanged&&needsMoreVisibleRows&&now-lastPaint>=48)){
         decisionProgressivePaintRankedFinal(state,false);
-        lastPaint=now;
-      }else $('decisionPage').textContent=decisionProgressiveStatusFinal(state,false,$('decisionBody')?.children.length||0);
+        lastPaint=now;lastOverviewPaint=now;
+      }else{
+        $('decisionPage').textContent=decisionProgressiveStatusFinal(state,false,$('decisionBody')?.children.length||0);
+        if(now-lastOverviewPaint>=96&&currentTopView()==='decision'&&decisionActiveTabState()?.kind==='list'){
+          progressiveOverviewCardsFinal('decisionOverview',decisionSummaryEntriesFinal(state.summary),true);
+          lastOverviewPaint=now;
+        }
+      }
       if(state.index<decisionTableIndexRowsFinal.length&&!await progressiveSearchFrameFinal(job))return;
     }
-    if(decisionTableIndexCompleteFinal&&state.index>=decisionTableIndexRowsFinal.length)break;
+    if(decisionTableIndexCompleteFinal&&state.index>=decisionTableIndexRowsFinal.length){
+      decisionProgressivePaintRankedFinal(state,false);
+      break;
+    }
     if(processed){
       decisionProgressivePaintRankedFinal(state,false);
       if(!await progressiveSearchFrameFinal(job))return;
