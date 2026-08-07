@@ -2595,11 +2595,15 @@ function decisionScheduleProgressiveRefreshFinal(){
   scheduleTableSearch('decision','decisionDecisionSearch',['decisionBody'],()=>renderDecisionView());
 }
 
+function decisionProgressiveStateMatchesRequestFinal(state=decisionProgressiveSearchStateFinal){
+  return !!state&&state.key===decisionProgressiveSearchKeyFinal()&&state.baseFilterKey===decisionStableBaseFilterKeyFinal()&&state.sortKey===`${decisionSortColumn}|${decisionSortDir}|${decisionPageSize()}`;
+}
+
 function decisionProgressiveStateIsCurrentFinal(){
   const state=decisionProgressiveSearchStateFinal;
   const dataKey=`${decisionAllPointRows.length}|${decisionRows.length}|${decisionPositionRows.length}|${decisionMemberRows.length}`;
   const sourceCurrent=state?.fromTableIndex?!decisionIndexAdvancedFiltersSelectedFinal():state?.dataKey===dataKey;
-  return !!state&&state.finished&&sourceCurrent&&state.key===decisionProgressiveSearchKeyFinal()&&state.baseFilterKey===decisionStableBaseFilterKeyFinal()&&state.sortKey===`${decisionSortColumn}|${decisionSortDir}|${decisionPageSize()}`;
+  return !!state&&state.finished&&sourceCurrent&&decisionProgressiveStateMatchesRequestFinal(state);
 }
 
 async function decisionHydrateFilterOptionsAfterPreparationFinal(){
@@ -2734,7 +2738,11 @@ renderDecisionView=function(){
     else decisionShowIndexedDetailFinal({dataset:{id:tab.id,proposalKey:tab.proposalKey}});
   }
   else if(currentTopView()==='decision'){
-    if(!decisionProgressiveStateIsCurrentFinal())decisionScheduleProgressiveRefreshFinal();
+    const state=decisionProgressiveSearchStateFinal;
+    /* Re-entering the view must resume the existing matching background job,
+       not cancel it and restart its count from zero. */
+    if(state&&!state.finished&&decisionProgressiveStateMatchesRequestFinal(state)&&progressiveSearchJobsFinal.has('decision'))decisionProgressivePaintRankedFinal(state,false);
+    else if(!decisionProgressiveStateIsCurrentFinal())decisionScheduleProgressiveRefreshFinal();
     else renderDecisionMasterView();
   }
   syncDecisionListDetailChromeFinal();

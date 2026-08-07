@@ -113,7 +113,10 @@ function startSessionDataPreloadFinal(){
   });
   const decisions=Promise.resolve().then(()=>startDecisionViewMount()).then(()=>ensureDecisionCanonicalDataFinal()).then(()=>{
     decisionStableBaseRowsFinal=null;
-    decisionScheduleProgressiveRefreshFinal();
+    const state=decisionProgressiveSearchStateFinal;
+    const matchingJob=state&&!state.finished&&decisionProgressiveStateMatchesRequestFinal(state)&&progressiveSearchJobsFinal.has('decision');
+    if(!decisionProgressiveStateIsCurrentFinal()&&!matchingJob)decisionScheduleProgressiveRefreshFinal();
+    else if(currentTopView()==='decision')renderDecisionView();
   });
   sessionDataPreloadPromiseFinal=Promise.allSettled([historic,documents,decisions]);
   return sessionDataPreloadPromiseFinal;

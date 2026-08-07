@@ -66,7 +66,7 @@ try{
     await setTopView('decision');
     const immediateReturnMs=performance.now()-started;
     let firstRowMs=null,firstRowBeforeDetails=false,percentWithNoRows=false,scanCompleteOverview=null;
-    let hadIndexedRows=false,indexedStateLostDuringCanonical=false,blankAfterIndexedRows=false;
+    let hadIndexedRows=false,indexedStateLostDuringCanonical=false,blankAfterIndexedRows=false,switchResume=null;
     const samples=[];
     for(let attempt=0;attempt<600;attempt++){
       const rows=document.querySelectorAll('#decisionBody tr').length;
@@ -76,6 +76,13 @@ try{
       if(rows&&firstRowMs===null){firstRowMs=performance.now()-started;firstRowBeforeDetails=!decisionCanonicalPreparationReadyFinal();}
       const streamState=decisionProgressiveSearchStateFinal;
       if(streamState?.fromTableIndex&&rows)hadIndexedRows=true;
+      if(!switchResume&&rows&&streamState&&!streamState.finished){
+        const stateBefore=streamState,jobBefore=progressiveSearchJobsFinal.get('decision'),indexBefore=streamState.index;
+        await setTopView('calculator');await new Promise(resolve=>requestAnimationFrame(resolve));
+        await setTopView('decision');await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+        const stateAfter=decisionProgressiveSearchStateFinal,jobAfter=progressiveSearchJobsFinal.get('decision');
+        switchResume={sameState:stateAfter===stateBefore,sameJob:jobAfter===jobBefore,indexBefore,indexAfter:stateAfter?.index||0,rows:document.querySelectorAll('#decisionBody tr').length};
+      }
       if(hadIndexedRows&&!decisionCanonicalPreparationReadyFinal()){
         if(!streamState?.fromTableIndex)indexedStateLostDuringCanonical=true;
         if(!rows)blankAfterIndexedRows=true;
@@ -121,10 +128,10 @@ try{
     decisionSearchQuery='skola';input.value='skola';decisionManualSortContextFinal='';decisionScheduleProgressiveRefreshFinal();
     const cacheRestoreMs=performance.now()-cacheStarted,cachedKeys=decisionProgressiveSearchStateFinal?.sortedRows?.map(decisionProposalKey)||[];
     const cached={blankRestored,restoreMs:cacheRestoreMs,finished:!!decisionProgressiveSearchStateFinal?.finished,noScan:!progressiveSearchJobsFinal.has('decision'),sameResults:[...cachedKeys].sort().join('|')===resultSet,relevance:!decisionManualSortActiveFinal()};
-    return {immediateReturnMs,firstRowMs,firstRowBeforeDetails,percentWithNoRows,incrementalContinuity:{hadIndexedRows,indexedStateLostDuringCanonical,blankAfterIndexedRows},maxGap,longTasks:longTasks.slice(-12),initial,scanCompleteOverview,searchStartedMs,rankingEqual:actual.length===expected.length&&actual.every((key,index)=>key===expected[index]),relevanceHeaderAria,ascending,descending,cached,actual:actual.length,expected:expected.length,samples:samples.slice(0,20)};
+    return {immediateReturnMs,firstRowMs,firstRowBeforeDetails,percentWithNoRows,switchResume,incrementalContinuity:{hadIndexedRows,indexedStateLostDuringCanonical,blankAfterIndexedRows},maxGap,longTasks:longTasks.slice(-12),initial,scanCompleteOverview,searchStartedMs,rankingEqual:actual.length===expected.length&&actual.every((key,index)=>key===expected[index]),relevanceHeaderAria,ascending,descending,cached,actual:actual.length,expected:expected.length,samples:samples.slice(0,20)};
   })()`);
   console.log(JSON.stringify(result,null,2));
-  if(result.percentWithNoRows||!result.firstRowBeforeDetails||result.firstRowMs>250||!result.incrementalContinuity.hadIndexedRows||result.incrementalContinuity.indexedStateLostDuringCanonical||result.incrementalContinuity.blankAfterIndexedRows||!result.initial.finished||result.initial.processed!==result.initial.total||result.scanCompleteOverview.actual!==result.scanCompleteOverview.expected||!result.rankingEqual||result.relevanceHeaderAria!=='none'||!result.ascending.sameState||!result.ascending.sameResults||!result.ascending.ordered||result.ascending.direction!=='asc'||!result.ascending.manual||result.ascending.query!=='skola'||result.ascending.aria!=='ascending'||result.ascending.rescanning||!result.descending.sameResults||!result.descending.ordered||result.descending.direction!=='desc'||!result.descending.manual||result.descending.query!=='skola'||result.descending.aria!=='descending'||result.descending.rescanning||!result.cached.blankRestored||!result.cached.finished||!result.cached.noScan||!result.cached.sameResults||!result.cached.relevance||result.cached.restoreMs>175||result.maxGap>350)process.exitCode=1;
+  if(result.percentWithNoRows||!result.firstRowBeforeDetails||result.firstRowMs>250||!result.switchResume?.sameState||!result.switchResume?.sameJob||result.switchResume.indexAfter<result.switchResume.indexBefore||result.switchResume.rows<=0||!result.incrementalContinuity.hadIndexedRows||result.incrementalContinuity.indexedStateLostDuringCanonical||result.incrementalContinuity.blankAfterIndexedRows||!result.initial.finished||result.initial.processed!==result.initial.total||result.scanCompleteOverview.actual!==result.scanCompleteOverview.expected||!result.rankingEqual||result.relevanceHeaderAria!=='none'||!result.ascending.sameState||!result.ascending.sameResults||!result.ascending.ordered||result.ascending.direction!=='asc'||!result.ascending.manual||result.ascending.query!=='skola'||result.ascending.aria!=='ascending'||result.ascending.rescanning||!result.descending.sameResults||!result.descending.ordered||result.descending.direction!=='desc'||!result.descending.manual||result.descending.query!=='skola'||result.descending.aria!=='descending'||result.descending.rescanning||!result.cached.blankRestored||!result.cached.finished||!result.cached.noScan||!result.cached.sameResults||!result.cached.relevance||result.cached.restoreMs>175||result.maxGap>350)process.exitCode=1;
 }finally{
   cdp?.close();chrome.kill();server.close();
   await new Promise(resolve=>setTimeout(resolve,500));

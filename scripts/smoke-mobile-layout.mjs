@@ -88,6 +88,18 @@ try{
   await evaluate(`document.getElementById('decisionTopTab').click()`);
   await waitFor(`document.getElementById('decisionBody').children.length>0`,800);
   results.push(await audit('decisions-list',390));
+  await waitFor(`decisionCanonicalPreparationReadyFinal()&&decisionProgressiveStateIsCurrentFinal()&&!progressiveSearchJobsFinal.has('decision')`,800);
+  const decisionSwitchStability=await evaluate(`(async()=>{
+    const waitFrame=()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    const originalState=decisionProgressiveSearchStateFinal,originalRows=document.getElementById('decisionBody').children.length,cycles=[];
+    for(const target of ['calculator','raw','decisionActivity','calculator']){
+      await setTopView(target);await waitFrame();
+      await setTopView('decision');await waitFrame();
+      const state=decisionProgressiveSearchStateFinal;
+      cycles.push({target,sameState:state===originalState,current:decisionProgressiveStateIsCurrentFinal(),job:progressiveSearchJobsFinal.has('decision'),finished:!!state?.finished,rows:document.getElementById('decisionBody').children.length,status:document.getElementById('decisionPage').textContent});
+    }
+    return {originalRows,cycles};
+  })()`);
   const decisionLayout=await evaluate(`(()=>{const ids=['decisionView','decisionFilters','decisionMasterPane'];const metric=element=>{const r=element.getBoundingClientRect(),s=getComputedStyle(element);return {id:element.id||element.tagName,left:r.left,right:r.right,width:r.width,clientWidth:element.clientWidth,scrollWidth:element.scrollWidth,overflowX:s.overflowX,contain:s.contain,minWidth:s.minWidth,maxWidth:s.maxWidth};};return {elements:ids.map(id=>metric(document.getElementById(id))),table:metric(document.querySelector('#decisionMasterPane table')),body:{clientWidth:document.body.clientWidth,scrollWidth:document.body.scrollWidth},document:{clientWidth:document.documentElement.clientWidth,scrollWidth:document.documentElement.scrollWidth,innerWidth}};})()`);
   await evaluate(`document.getElementById('decisionDateToggle').click()`);await waitFor(`!document.getElementById('decisionDateCalendar').hidden`);
   results.push(await audit('decision-calendar',390));
@@ -120,9 +132,9 @@ try{
   await cdp.send('Emulation.setDeviceMetricsOverride',{width:1280,height:800,deviceScaleFactor:1,mobile:false});await wait(50);
   const desktopWrapper=await evaluate(`getComputedStyle(document.querySelector('.mobile-table-scroll')).display`);
   const failures=results.filter(item=>item.innerWidth!==item.width||item.pageScrollWidth>item.clientWidth+1||item.outside.length||item.tinyControls.length);
-  const output={failures,calculatorScroll,decisionLayout,calendarRect,dialogRect,desktopWrapper,results};
+  const output={failures,calculatorScroll,decisionSwitchStability,decisionLayout,calendarRect,dialogRect,desktopWrapper,results};
   console.log(JSON.stringify(output,null,2));
-  if(failures.length||!calculatorScroll.inputScrollable||!calculatorScroll.resultScrollable||calendarRect.left<0||calendarRect.right>calendarRect.viewport+1||dialogRect.top<0||dialogRect.bottom>dialogRect.viewportHeight+1||desktopWrapper!=='contents')process.exitCode=1;
+  if(failures.length||!calculatorScroll.inputScrollable||!calculatorScroll.resultScrollable||decisionSwitchStability.originalRows<=0||decisionSwitchStability.cycles.some(cycle=>!cycle.sameState||!cycle.current||cycle.job||!cycle.finished||cycle.rows<=0)||calendarRect.left<0||calendarRect.right>calendarRect.viewport+1||dialogRect.top<0||dialogRect.bottom>dialogRect.viewportHeight+1||desktopWrapper!=='contents')process.exitCode=1;
 }finally{
   cdp?.close();chrome.kill();server.close();await wait(300);await rm(profile,{recursive:true,force:true}).catch(()=>{});
 }
