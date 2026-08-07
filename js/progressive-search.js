@@ -1339,19 +1339,20 @@ async function decisionApplyFilterOptionsFinal(options,job){
 }
 
 async function decisionStableBuildBaseRowsFinal(job){
-  const organs=selectedDecisionValues('decisionOrgan'),parties=selectedDecisionValues('decisionParty'),members=selectedDecisionValues('decisionMember'),votes=selectedDecisionValues('decisionVote'),results=selectedDecisionValues('decisionResult'),types=selectedDecisionValues('decisionProposalType');
-  const requiresVoteMatch=parties.length||members.length||votes.length,attendanceKeys=new Set(),counts=new Map();
+  const organs=selectedDecisionValues('decisionOrgan'),parties=selectedDecisionValues('decisionParty'),members=selectedDecisionValues('decisionMember'),votes=selectedDecisionValues('decisionVote'),results=normalizeDecisionResultFilterSelection(selectedDecisionValues('decisionResult')),types=selectedDecisionValues('decisionProposalType').map(decisionProposalTypeCanonicalFinal);
+  const requiresVoteMatch=parties.length||members.length||votes.length,attendanceKeys=new Set(),matchedKeys=new Set(),counts=new Map();
   if(members.length&&!votes.length){
     let started=performance.now();
     for(const row of decisionMemberRows){
-      if(decisionDateMatches(row.date)&&(!organs.length||organs.includes(municipalNorm(row.body)))&&(!parties.length||parties.includes(municipalNorm(row.party)))&&members.includes(row.memberKey))attendanceKeys.add(row.attendanceKey);
+      if(decisionDateMatches(row.date)&&(!organs.length||decisionOrganMatches(organs,row.body))&&(!parties.length||parties.includes(municipalNorm(row.party)))&&members.includes(row.memberKey||decisionMemberKey(row.name,row.party,row.body)))attendanceKeys.add(row.attendanceKey);
       if(progressiveSliceExpiredFinal(started,3)){if(!await progressiveSearchFrameFinal(job))return null;started=performance.now();}
     }
   }
   let started=performance.now();
   for(const row of decisionRows){
-    if(decisionDateMatches(row.date)&&(!parties.length||parties.includes(municipalNorm(row.party)))&&(!members.length||members.includes(decisionMemberKey(row.name,row.party)))&&(!votes.length||votes.includes(String(row.vote)))){
+    if(decisionDateMatches(row.date)&&(!parties.length||parties.includes(municipalNorm(row.party)))&&(!members.length||members.includes(decisionMemberKey(row.name,row.party,row.body)))&&(!votes.length||votes.includes(String(row.vote)))){
       const key=`${row.id}|${row.point}`;
+      matchedKeys.add(key);
       if(!counts.has(key))counts.set(key,{voteRoundCount:0,voteCount:0,yes:0,no:0,abstain:0,absent:0,voteIds:new Set()});
       const count=counts.get(key),eventId=decisionVoteEventBase(row.intressentId);
       count.voteCount++;if(eventId)count.voteIds.add(eventId);count.voteRoundCount=count.voteIds.size;
@@ -1359,11 +1360,16 @@ async function decisionStableBuildBaseRowsFinal(job){
     }
     if(progressiveSliceExpiredFinal(started,3)){if(!await progressiveSearchFrameFinal(job))return null;started=performance.now();}
   }
+  started=performance.now();
+  for(const row of decisionPositionRows){
+    if(decisionDateMatches(row.date)&&(!parties.length||parties.includes(municipalNorm(row.party)))&&(!members.length||members.includes(decisionMemberKey(row.name,row.party,row.body)))&&(!votes.length||votes.includes(String(row.vote))))matchedKeys.add(`${row.id}|${row.point}`);
+    if(progressiveSliceExpiredFinal(started,3)){if(!await progressiveSearchFrameFinal(job))return null;started=performance.now();}
+  }
   const output=[];
   started=performance.now();
   for(const row of decisionAllPointRows){
     const key=`${row.id}|${row.point}`,count=counts.get(key),hasAttendance=attendanceKeys.has(row.attendanceKey);
-    if((types.length&&!types.includes(municipalNorm(row.proposalType||'beslut')))||!decisionDateMatches(row.date)||(organs.length&&!organs.includes(municipalNorm(row.body)))||(results.length&&!results.includes(decisionResultFilterGroup(row.result||'beslut')))||(requiresVoteMatch&&!count&&!hasAttendance))continue;
+    if((types.length&&!types.includes(row?.isMeeting?'meeting':decisionProposalTypeCanonicalFinal(row.proposalType||'beslut')))||!decisionDateMatches(row.date)||(organs.length&&!decisionOrganMatches(organs,row.body))||(results.length&&!results.includes(decisionResultFilterGroup(row.result||'beslut')))||(requiresVoteMatch&&!matchedKeys.has(key)&&!hasAttendance))continue;
     const fallback={voteRoundCount:0,voteCount:0,yes:0,no:0,abstain:0,absent:0},current=count||fallback;
     if(requiresVoteMatch&&!hasAttendance)output.push({...row,voteRoundCount:current.voteRoundCount||0,voteCount:current.voteCount||0,yes:current.yes||0,no:current.no||0,abstain:current.abstain||0,absent:current.absent||0});
     else if(requiresVoteMatch&&hasAttendance&&!count)output.push({...row,voteRoundCount:row.fullVoteRoundCount||0,voteCount:row.fullVoteCount||0,yes:row.fullYes||0,no:row.fullNo||0,abstain:row.fullAbstain||0,absent:row.fullAbsent||0});
@@ -1492,11 +1498,11 @@ function decisionShouldUseTableIndexFinal(){
 }
 
 function decisionTableIndexPredicateFinal(row,query){
-  const organs=selectedDecisionValues('decisionOrgan'),results=selectedDecisionValues('decisionResult'),types=selectedDecisionValues('decisionProposalType');
+  const organs=selectedDecisionValues('decisionOrgan'),results=normalizeDecisionResultFilterSelection(selectedDecisionValues('decisionResult')),types=selectedDecisionValues('decisionProposalType').map(decisionProposalTypeCanonicalFinal);
   if(!decisionDateMatches(row.date))return false;
-  if(organs.length&&!organs.includes(municipalNorm(row.body)))return false;
+  if(organs.length&&!decisionOrganMatches(organs,row.body))return false;
   if(results.length&&!results.includes(decisionResultFilterGroup(row.result||'beslut')))return false;
-  if(types.length&&!types.includes(municipalNorm(row.proposalType||'beslut')))return false;
+  if(types.length&&!types.includes(row?.isMeeting?'meeting':decisionProposalTypeCanonicalFinal(row.proposalType||'beslut')))return false;
   if(!query)return true;
   const quickQuery=fuzzySearchNormalize(query);
   return decisionStableQuickSearchTextFinal(row).includes(quickQuery)||decisionStableSearchMatchesFinal(row,query);
@@ -1565,10 +1571,14 @@ async function decisionRunTableIndexJobFinal(job){
 }
 
 progressiveSearchHandlersFinal.set('decision',async job=>{
+  if(decisionIndexAdvancedFiltersSelectedFinal()&&!decisionCanonicalPreparationReadyFinal()){
+    await ensureDecisionCanonicalDataFinal();
+    if(job.cancelled)return;
+  }
   if(decisionShouldUseTableIndexFinal())return decisionRunTableIndexJobFinal(job);
   const query=decisionProgressiveSearchKeyFinal();
   const baseFilterKey=decisionStableBaseFilterKeyFinal();
-  const dataKey=`${decisionAllPointRows.length}|${decisionRows.length}|${decisionMemberRows.length}`;
+  const dataKey=`${decisionAllPointRows.length}|${decisionRows.length}|${decisionPositionRows.length}|${decisionMemberRows.length}`;
   const sortKey=`${decisionSortColumn}|${decisionSortDir}|${decisionPageSize()}`;
   const compare=(a,b)=>decisionSearchSortCompareFinal(a,b,query);
   const state={key:query,baseFilterKey,sortKey,dataKey,matches:new Set(),filteredMatches:[],previewRows:[],sortedRows:[],summary:decisionSummaryAccumulatorFinal(),index:0,total:decisionAllPointRows.length,progressIndex:0,progressTotal:decisionAllPointRows.length,complete:true,finished:false,initialLoad:!decisionInitialLoadCompleteFinal,hasPainted:false,paintPending:false,revealCount:0};
@@ -2523,7 +2533,7 @@ function decisionScheduleProgressiveRefreshFinal(){
 
 function decisionProgressiveStateIsCurrentFinal(){
   const state=decisionProgressiveSearchStateFinal;
-  const dataKey=`${decisionAllPointRows.length}|${decisionRows.length}|${decisionMemberRows.length}`;
+  const dataKey=`${decisionAllPointRows.length}|${decisionRows.length}|${decisionPositionRows.length}|${decisionMemberRows.length}`;
   const sourceCurrent=state?.fromTableIndex?!decisionIndexAdvancedFiltersSelectedFinal():state?.dataKey===dataKey;
   return !!state&&state.finished&&sourceCurrent&&state.key===decisionProgressiveSearchKeyFinal()&&state.baseFilterKey===decisionStableBaseFilterKeyFinal()&&state.sortKey===`${decisionSortColumn}|${decisionSortDir}|${decisionPageSize()}`;
 }
@@ -2757,7 +2767,7 @@ function municipalCloneSummaryFinal(summary){
 const decisionBaseRowsMemoFinal=new Map();
 const decisionStableBuildBaseRowsBeforeMemoFinal=decisionStableBuildBaseRowsFinal;
 decisionStableBuildBaseRowsFinal=async function(job){
-  const dataKey=`${decisionAllPointRows.length}|${decisionRows.length}|${decisionMemberRows.length}`;
+  const dataKey=`${decisionAllPointRows.length}|${decisionRows.length}|${decisionPositionRows.length}|${decisionMemberRows.length}`;
   const key=`${dataKey}|${decisionStableBaseFilterKeyFinal()}`;
   const cached=municipalMemoGetFinal(decisionBaseRowsMemoFinal,key);
   if(cached)return cached;
@@ -2777,7 +2787,7 @@ function decisionResultMemoKeyFinal(){
     source=`index:${decisionTableIndexRowsFinal.length}:${decisionTableIndexTotalFinal}`;
   }else{
     if(!decisionCanonicalPreparationReadyFinal())return '';
-    source=`canonical:${decisionAllPointRows.length}:${decisionRows.length}:${decisionMemberRows.length}`;
+    source=`canonical:${decisionAllPointRows.length}:${decisionRows.length}:${decisionPositionRows.length}:${decisionMemberRows.length}`;
   }
   return `${source}|${decisionProgressiveSearchKeyFinal()}|${decisionStableBaseFilterKeyFinal()}`;
 }
