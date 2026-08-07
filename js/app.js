@@ -102,6 +102,16 @@ function scheduleDecisionViewMountAfterPaint(){
     if(currentTopView()==='decision')startDecisionViewMount();
   }));
 }
+function resumeRawBackgroundLoadFinal(activeView){
+  setUiRegionBusy(activeView,true);
+  const state=typeof rawProgressiveSearchStateFinal==='undefined'?null:rawProgressiveSearchStateFinal;
+  if(state&&!state.complete&&typeof rawProgressivePaintFinal==='function')rawProgressivePaintFinal(state,false);
+  const load=rawDataPromise||ensureRawData();
+  load.catch(error=>{
+    if(currentTopView()==='raw')$('rawStatus').textContent=error?.message||'Kunde inte ladda historisk valdata.';
+  }).finally(()=>setUiRegionBusy(activeView,false));
+  return load;
+}
 async function setTopView(name){
   if(['decision','decisionActivity'].includes(name)&&!municipalWorkEnabled)name='calculator';
   const calc=name==='calculator',raw=name==='raw',decision=name==='decision',decisionActivity=name==='decisionActivity',activeView=calc?$('calculatorView'):raw?$('rawDataView'):decision?$('decisionView'):$('decisionActivityView');
@@ -109,10 +119,7 @@ async function setTopView(name){
   $('calculatorTopTab').classList.toggle('active',calc);$('rawTopTab').classList.toggle('active',raw);$('decisionTopTab').classList.toggle('active',decision);$('decisionActivityTopTab').classList.toggle('active',decisionActivity);
   animateUiRegion(activeView);
   if(raw&&!rawReady){
-    setUiRegionBusy(activeView,true);
-    ensureRawData().catch(error=>{
-      if(currentTopView()==='raw')$('rawStatus').textContent=error?.message||'Kunde inte ladda historisk valdata.';
-    }).finally(()=>setUiRegionBusy(activeView,false));
+    resumeRawBackgroundLoadFinal(activeView);
   }else if(raw)renderRawTable();
   if(decision){
     renderMunicipalTableShellFinal('decision');

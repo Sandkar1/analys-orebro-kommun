@@ -1593,6 +1593,15 @@ td.num{
   grid-template-columns:repeat(auto-fit,minmax(170px,1fr));
 }
 
+#calcSummary.calc-template-summary{
+  grid-template-columns:minmax(170px,280px);
+  justify-content:start;
+}
+
+#calcSummary.calc-template-summary .card:not(:first-child){
+  display:none;
+}
+
 .raw-overview{
   grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
 }

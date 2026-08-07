@@ -2070,6 +2070,15 @@ function rawFinalizeFilterOptionsFinal(options){
   return {rows:rawRows,years:sort(options.years),elections:['parliamentary','regional','municipal'].filter(value=>options.elections.has(value)),counties:sort(options.counties),municipalities:sort(options.municipalities),municipalitiesByCounty:options.municipalitiesByCounty,parties:[...options.partyVotes].sort((a,b)=>b[1]-a[1]||rawDisplay('party_standard',a[0]).localeCompare(rawDisplay('party_standard',b[0]),'sv',{numeric:true,sensitivity:'base'})).map(([key])=>key)};
 }
 
+let rawLoadingFilterPublishAtFinal=0;
+function rawPublishLoadingFilterOptionsFinal(options,force=false){
+  const now=performance.now();
+  if(!options||(!force&&now-rawLoadingFilterPublishAtFinal<220))return;
+  rawLoadingFilterPublishAtFinal=now;
+  rawFilterOptionCacheFinal=rawFinalizeFilterOptionsFinal(options);
+  buildRawFilters();
+}
+
 function rawFilterOptionsFinal(){
   return rawFilterOptionCacheFinal?.rows===rawRows?rawFilterOptionCacheFinal:null;
 }
@@ -2170,7 +2179,7 @@ function rawLoadHistoricWorkerFinal(worker){
       finishing=true;
       try{
         worker.terminate();
-        rawFilterOptionCacheFinal=rawFinalizeFilterOptionsFinal(filterAccumulator);
+        rawPublishLoadingFilterOptionsFinal(filterAccumulator,true);
         rawReady=true;
         buildRawFilters();
         const current=rawProgressiveSearchStateFinal===state&&state.key===rawProgressiveSearchKeyFinal();
@@ -2195,6 +2204,7 @@ function rawLoadHistoricWorkerFinal(worker){
             progressiveInsertRankedFinal(isRawInvalidVoteRow(row)?state.previewIneligible:state.previewEligible,row,rawProgressiveCompareFinal,rawPageSize());
           }
         }
+        rawPublishLoadingFilterOptionsFinal(filterAccumulator);
         if(rawProgressiveSearchStateFinal===state){
           const now=performance.now();
           if(now-lastPaint>=48||workerComplete&&queueIndex===queue.length){rawProgressivePaintFinal(state,false);lastPaint=now;}
@@ -2286,6 +2296,7 @@ ensureRawData=async function(){
         }
         if(traversed>=progressiveRecordsPerFrameFinal.raw||progressiveSliceExpiredFinal(started,4)){
           const now=performance.now();
+          rawPublishLoadingFilterOptionsFinal(filterAccumulator);
           if(rawProgressiveSearchStateFinal===state){
             if(now-lastPaint>=48||state.index===state.total){rawProgressivePaintFinal(state,false);lastPaint=now;}
             else $('rawCount').textContent=progressiveResultStatusFinal({active:true,matches:state.matches.length,visible:($('rawEligibleBody')?.children.length||0)+($('rawIneligibleBody')?.children.length||0),index:state.index,total:state.total,progressLabel:'inläst'});
@@ -2294,7 +2305,7 @@ ensureRawData=async function(){
           started=performance.now();traversed=0;
         }
       }
-      rawFilterOptionCacheFinal=rawFinalizeFilterOptionsFinal(filterAccumulator);
+      rawPublishLoadingFilterOptionsFinal(filterAccumulator,true);
       rawReady=true;
       buildRawFilters();
       const current=rawProgressiveSearchStateFinal===state&&state.key===rawProgressiveSearchKeyFinal();
@@ -2545,6 +2556,17 @@ async function decisionHydrateFilterOptionsAfterPreparationFinal(){
   if(options)await decisionApplyFilterOptionsFinal(options,job);
 }
 
+function decisionReconcileFilterSelectFinal(id){
+  const select=$(id);
+  if(!select)return;
+  const column=select.dataset.col||'';
+  const values=uniqueDecisionValues([...select.options].map(option=>option.value).filter(value=>value&&value!==decisionFilterPromptValueFinal&&value!==decisionFilterClearValueFinal));
+  if(document.activeElement===select)select.blur();
+  decisionFilterControlKeysFinal.delete(id);
+  setDecisionSelectOptions(id,values,selectedDecisionValues(id),column);
+  decisionFilterControlKeysFinal.set(id,JSON.stringify([values,selectedDecisionValues(id),column]));
+}
+
 handleDecisionFilterChange=function(id){
   const select=$(id);
   if(!select)return;
@@ -2554,6 +2576,7 @@ handleDecisionFilterChange=function(id){
   else if(value&&!selectedDecisionValues(id).includes(value))decisionFilterLocks[id]=[...selectedDecisionValues(id),value];
   else if(!value)decisionFilterLocks[id]=[];
   decisionManualSortContextFinal='';
+  decisionReconcileFilterSelectFinal(id);
   renderDecisionFilterLocks();
   decisionScheduleProgressiveRefreshFinal();
 };
@@ -2572,11 +2595,13 @@ renderDecisionFilterLocks=function(){
   if(chips.length)host.insertAdjacentHTML('beforeend','<button type="button" class="filter-clear-all" data-clear-all-filters title="Rensa alla filter" aria-label="Rensa alla filter">× Rensa alla</button>');
   host.querySelectorAll('.raw-filter-chip button').forEach(button=>button.onclick=()=>{
     decisionFilterLocks[button.dataset.id]=selectedDecisionValues(button.dataset.id).filter(value=>value!==button.dataset.value);
+    decisionReconcileFilterSelectFinal(button.dataset.id);
     renderDecisionFilterLocks();
     decisionScheduleProgressiveRefreshFinal();
   });
   host.querySelector('[data-clear-all-filters]')?.addEventListener('click',()=>{
     decisionFilterIds.forEach(id=>{decisionFilterLocks[id]=[];});
+    decisionFilterIds.forEach(decisionReconcileFilterSelectFinal);
     renderDecisionFilterLocks();
     decisionScheduleProgressiveRefreshFinal();
   });
