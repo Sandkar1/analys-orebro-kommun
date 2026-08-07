@@ -1447,7 +1447,7 @@ function decisionProgressivePaintRankedFinal(state,complete=false){
   }
   decisionProgressiveReconcileRowsFinal(rows.slice(0,visibleCount),false);
   state.hasPainted=true;
-  decisionStableListRenderFinal={key:decisionStableListKeyFinal(),filteredRows,rows,rendered:visibleCount};
+  decisionStableListRenderFinal={key:decisionStableListKeyFinal(),progressiveState:state,filteredRows,rows,rendered:visibleCount};
   progressiveOverviewCardsFinal('decisionOverview',decisionSummaryEntriesFinal(state.summary),!complete);
   $('decisionStatus').textContent='';
   $('decisionStatus').hidden=true;
@@ -1918,11 +1918,18 @@ renderDecisionMasterView=function(){
   decisionBindStableListEventsFinal();
   const key=decisionStableListKeyFinal();
   const listTab=decisionListTab();
+  const progressiveState=decisionProgressiveStateIsCurrentFinal()?decisionProgressiveSearchStateFinal:null;
   let state=decisionStableListRenderFinal;
-  const reset=!state||state.key!==key;
+  /* A background index/canonical job can complete while another main tab is
+     visible. Its query/filter key can be identical to the earlier partial
+     result, so the key alone cannot prove that the cached DOM description is
+     current. Couple it to the exact result state and restore those already
+     sorted rows on re-entry without rescanning the data. */
+  const reset=!state||state.key!==key||(progressiveState&&state.progressiveState!==progressiveState);
   if(reset){
-    const filteredRows=filteredDecisionPointRows();
-    state={key,filteredRows,rows:sortedDecisionPointRows(filteredRows),rendered:0};
+    const filteredRows=progressiveState?.filteredMatches||filteredDecisionPointRows();
+    const rows=progressiveState?.sortedRows||sortedDecisionPointRows(filteredRows);
+    state={key,progressiveState,filteredRows,rows,rendered:0};
     decisionStableListRenderFinal=state;
     if(!decisionSearchNormalizeFinal(decisionSearchQuery)){
       decisionStableBaseRowsFinal={key:decisionStableBaseFilterKeyFinal(),rows:filteredRows};
