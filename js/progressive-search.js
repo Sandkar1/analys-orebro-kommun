@@ -511,10 +511,15 @@ function rawOverviewEntriesFinal(summary,active=false){
 }
 
 function rawProgressiveSearchKeyFinal(){
+  const selections=['rawYear','rawElection','rawCounty','rawMunicipality','rawParty'].map(id=>selectedRawValues(id));
+  /* AND and OR are equivalent until two different filter categories are
+     active. Canonicalizing that no-op state lets the full-list cache serve
+     either mode without another traversal. */
+  const effectiveMode=selections.filter(values=>values.length).length>=2?rawFilterMatchMode:'single-group';
   return JSON.stringify([
-    rawFilterMatchMode,
+    effectiveMode,
     fuzzySearchNormalize($('rawSearch')?.value||''),
-    ...['rawYear','rawElection','rawCounty','rawMunicipality','rawParty'].map(id=>selectedRawValues(id))
+    ...selections
   ]);
 }
 
@@ -603,6 +608,7 @@ async function rawFinalizeProgressiveStateFinal(state,job){
   if(rawProgressiveSearchStateFinal!==state||job.cancelled)return false;
   if(state.initialLoad)rawInitialLoadCompleteFinal=true;
   rawProgressivePaintFinal(state,true);
+  rawMemoizeCompletedStateFinal(state);
   return true;
 }
 
@@ -2174,14 +2180,14 @@ handleRawFilterChange=function(id){
 renderRawFilterLocks=function(){
   const host=$('rawFilterLocks');
   if(!host)return;
-  const chips=[];
+  const chips=[],activeGroupCount=rawFilterIds.filter(id=>selectedRawValues(id).length).length;
   rawFilterIds.forEach(id=>{
     const select=$(id),column=select?.dataset.col||'';
     selectedRawValues(id).forEach(value=>chips.push({id,value,label:rawFilterLabel(id,column,value)}));
   });
   host.hidden=!chips.length;
   host.innerHTML=chips.map(chip=>`<span class="raw-filter-chip"><span>${esc(chip.label)}</span><button type="button" data-id="${esc(chip.id)}" data-value="${esc(chip.value)}" title="Rensa filter" aria-label="Rensa filter">×</button></span>`).join('');
-  if(chips.length)host.insertAdjacentHTML('beforeend','<button type="button" class="filter-clear-all" data-clear-all-filters title="Rensa alla filter" aria-label="Rensa alla filter">× Rensa alla</button>'+filterModeToggleHtml(rawFilterMatchMode));
+  if(chips.length)host.insertAdjacentHTML('beforeend','<button type="button" class="filter-clear-all" data-clear-all-filters title="Rensa alla filter" aria-label="Rensa alla filter">× Rensa alla</button>'+filterModeToggleHtml(rawFilterMatchMode,activeGroupCount));
   host.querySelectorAll('.raw-filter-chip button').forEach(button=>button.onclick=()=>{
     rawFilterLocks[button.dataset.id]=selectedRawValues(button.dataset.id).filter(value=>value!==button.dataset.value);
     buildRawFilters();
@@ -2237,6 +2243,7 @@ function rawResortCompletedStateFinal(state,reverseExisting){
   state.hasPainted=false;
   rawStableHeaderKeyFinal='';
   rawProgressivePaintFinal(state,true);
+  rawMemoizeCompletedStateFinal(state);
 }
 
 setRawSort=function(column){
@@ -2610,7 +2617,8 @@ renderActivityFilterLocks=function(){
   });
   host.hidden=!chips.length;
   host.innerHTML=chips.map(chip=>`<span class="raw-filter-chip"><span>${esc(chip.label)}</span><button type="button" data-key="${esc(chip.key)}" data-value="${esc(chip.value)}" title="Rensa filter" aria-label="Rensa filter">×</button></span>`).join('');
-  if(chips.length)host.insertAdjacentHTML('beforeend','<button type="button" class="filter-clear-all" data-clear-all-filters title="Rensa alla filter" aria-label="Rensa alla filter">× Rensa alla</button>'+filterModeToggleHtml(decisionActivityFilterMatchMode));
+  const activeGroupCount=ids.filter(id=>{const key=$(id)?.dataset.activityKey;return key&&selectedActivityValues(key).length;}).length;
+  if(chips.length)host.insertAdjacentHTML('beforeend','<button type="button" class="filter-clear-all" data-clear-all-filters title="Rensa alla filter" aria-label="Rensa alla filter">× Rensa alla</button>'+filterModeToggleHtml(decisionActivityFilterMatchMode,activeGroupCount));
   host.querySelectorAll('.raw-filter-chip button').forEach(button=>button.onclick=()=>{
     decisionActivityFilters[button.dataset.key]=selectedActivityValues(button.dataset.key).filter(value=>value!==button.dataset.value);
     decisionActivityActiveTab=0;resetDecisionActivityPage();renderDecisionActivityView();
@@ -2684,14 +2692,14 @@ renderDecisionFilterLocks=function(){
   decisionRemoveLegacyInlineFilterLocksFinal();
   const host=$('decisionFilterLocks');
   if(!host)return;
-  const chips=[];
+  const chips=[],activeGroupCount=decisionFilterIds.filter(id=>selectedDecisionValues(id).length).length;
   decisionFilterIds.forEach(id=>{
     const select=$(id),column=select?.dataset.col||'';
     selectedDecisionValues(id).forEach(value=>chips.push({id,value,label:decisionFilterLabelFinal(id,column,value)}));
   });
   host.hidden=!chips.length;
   host.innerHTML=chips.map(chip=>`<span class="raw-filter-chip"><span>${esc(chip.label)}</span><button type="button" data-id="${esc(chip.id)}" data-value="${esc(chip.value)}" title="Rensa filter" aria-label="Rensa filter">×</button></span>`).join('');
-  if(chips.length)host.insertAdjacentHTML('beforeend','<button type="button" class="filter-clear-all" data-clear-all-filters title="Rensa alla filter" aria-label="Rensa alla filter">× Rensa alla</button>'+filterModeToggleHtml(decisionFilterMatchMode));
+  if(chips.length)host.insertAdjacentHTML('beforeend','<button type="button" class="filter-clear-all" data-clear-all-filters title="Rensa alla filter" aria-label="Rensa alla filter">× Rensa alla</button>'+filterModeToggleHtml(decisionFilterMatchMode,activeGroupCount));
   host.querySelectorAll('.raw-filter-chip button').forEach(button=>button.onclick=()=>{
     decisionFilterLocks[button.dataset.id]=selectedDecisionValues(button.dataset.id).filter(value=>value!==button.dataset.value);
     decisionReconcileFilterSelectFinal(button.dataset.id);
@@ -2913,6 +2921,10 @@ decisionStableBuildBaseRowsFinal=async function(job){
 const decisionResultMemoFinal=new Map();
 const activityResultMemoFinal=new Map();
 const rawResultMemoFinal=new Map();
+/* The initial historical load bypasses the normal progressive-search handler.
+   Keep its unfiltered presentation pinned so clearing filters can always
+   restore it synchronously, even after the small LRU has cycled. */
+const rawBaselineResultMemoFinal=new Map();
 
 function decisionResultMemoKeyFinal(){
   let source='';
@@ -2932,6 +2944,23 @@ function activityResultMemoKeyFinal(){
 
 function rawResultMemoKeyFinal(){
   return rawReady?`${rawRows.length}|${rawProgressiveSearchKeyFinal()}`:'';
+}
+
+function rawRequestIsUnfilteredFinal(){
+  return !fuzzySearchNormalize($('rawSearch')?.value||'')&&['rawYear','rawElection','rawCounty','rawMunicipality','rawParty'].every(id=>!selectedRawValues(id).length);
+}
+
+function rawResultSnapshotFinal(state){
+  return {matches:[...state.matches],sortedRows:[...state.sortedRows],previewEligible:[...state.previewEligible],previewIneligible:[...state.previewIneligible],summary:municipalCloneSummaryFinal(state.summary),finalPresentation:{...state.finalPresentation,eligible:[...state.finalPresentation.eligible],ineligible:[...state.finalPresentation.ineligible]},index:state.index,total:state.total,revealEligible:state.revealEligible,revealIneligible:state.revealIneligible};
+}
+
+function rawMemoizeCompletedStateFinal(state){
+  const key=rawResultMemoKeyFinal();
+  if(!key||!state?.complete||state.key!==rawProgressiveSearchKeyFinal()||!state.finalPresentation)return false;
+  const snapshot=rawResultSnapshotFinal(state);
+  municipalMemoSetFinal(rawResultMemoFinal,key,snapshot,6);
+  if(rawRequestIsUnfilteredFinal())municipalMemoSetFinal(rawBaselineResultMemoFinal,key,snapshot,20);
+  return true;
 }
 
 function decisionResultSortModeFinal(){
@@ -2991,7 +3020,7 @@ function activityRestoreMemoFinal(){
 }
 
 function rawRestoreMemoFinal(){
-  const key=rawResultMemoKeyFinal(),cached=municipalMemoGetFinal(rawResultMemoFinal,key);
+  const key=rawResultMemoKeyFinal(),cached=municipalMemoGetFinal(rawResultMemoFinal,key)||municipalMemoGetFinal(rawBaselineResultMemoFinal,key);
   if(!cached)return false;
   const state={...cached,key:rawProgressiveSearchKeyFinal(),matches:[...cached.matches],visibleRows:[...cached.matches],sortedRows:[...cached.sortedRows],previewEligible:[...cached.previewEligible],previewIneligible:[...cached.previewIneligible],summary:municipalCloneSummaryFinal(cached.summary),finalPresentation:{...cached.finalPresentation,eligible:[...cached.finalPresentation.eligible],ineligible:[...cached.finalPresentation.ineligible]},initialLoad:false,hasPainted:false,pointerDown:false,paintPending:false,complete:true};
   rawProgressiveSearchStateFinal=state;
@@ -3015,15 +3044,6 @@ progressiveSearchHandlersFinal.set('decision-activity',async job=>{
   const state=decisionActivityProgressiveSearchStateFinal,key=activityResultMemoKeyFinal();
   if(!job.cancelled&&state?.complete&&state.key===decisionActivityProgressiveSearchKeyFinal()){
     municipalMemoSetFinal(activityResultMemoFinal,key,{rows:[...state.visibleRows],sortedRows:[...state.sortedRows],sortMode:activityResultSortModeFinal(),summary:municipalCloneSummaryFinal(state.summary)},10);
-  }
-});
-
-const rawProgressiveHandlerBeforeMemoFinal=progressiveSearchHandlersFinal.get('raw');
-progressiveSearchHandlersFinal.set('raw',async job=>{
-  await rawProgressiveHandlerBeforeMemoFinal(job);
-  const state=rawProgressiveSearchStateFinal,key=rawResultMemoKeyFinal();
-  if(!job.cancelled&&key&&state?.complete&&state.key===rawProgressiveSearchKeyFinal()&&state.finalPresentation){
-    municipalMemoSetFinal(rawResultMemoFinal,key,{matches:[...state.matches],sortedRows:[...state.sortedRows],previewEligible:[...state.previewEligible],previewIneligible:[...state.previewIneligible],summary:municipalCloneSummaryFinal(state.summary),finalPresentation:{...state.finalPresentation,eligible:[...state.finalPresentation.eligible],ineligible:[...state.finalPresentation.ineligible]},index:state.index,total:state.total,revealEligible:state.revealEligible,revealIneligible:state.revealIneligible},6);
   }
 });
 

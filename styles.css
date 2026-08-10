@@ -1434,47 +1434,51 @@ select[multiple]{
   opacity:1;
 }
 
+.filter-mode-toggle small{
+  max-width:76px;
+  color:var(--muted);
+  font-size:9px;
+  font-weight:560;
+  line-height:1.05;
+  letter-spacing:0;
+  text-align:left;
+}
+
+.filter-mode-toggle.is-single-group{
+  border-color:rgba(184,203,210,.54);
+  opacity:.74;
+}
+
 .venn-diagram{
-  position:relative;
   display:inline-block;
   width:21px;
   height:14px;
   flex:0 0 21px;
 }
 
-.venn-diagram > span{
-  position:absolute;
-  top:1px;
-  width:13px;
-  height:13px;
-  border:1.5px solid currentColor;
-  border-radius:50%;
-  background:rgba(255,255,255,.34);
+.venn-diagram svg{
+  display:block;
+  width:100%;
+  height:100%;
+  overflow:visible;
 }
 
-.venn-diagram > span:first-child{left:0;}
-.venn-diagram > span:nth-child(2){right:0;}
-
-.venn-diagram > i{
-  position:absolute;
-  top:4px;
-  left:8px;
-  width:5px;
-  height:7px;
-  border-radius:50%;
-  background:currentColor;
+.venn-union-fill,
+.venn-intersection-fill{
+  fill:currentColor;
   opacity:0;
 }
 
-/* OR is the union of the sets, so both circles are filled. AND keeps the
-   circles quiet and emphasizes only their shared lens. */
-.filter-mode-toggle[data-mode="or"] .venn-diagram > span{
-  background:rgba(23,58,94,.20);
-  background:color-mix(in srgb,currentColor 24%,transparent);
+.venn-outlines{
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.7;
 }
 
-.filter-mode-toggle[data-mode="and"] .venn-diagram > span{
-  background:rgba(255,255,255,.34);
+/* Match the conventional Venn treatment: AND colors only the true lens;
+   OR colors one uniform union rather than darkening the overlap twice. */
+.filter-mode-toggle[data-mode="or"] .venn-union-fill{
+  opacity:.24;
 }
 
 .filter-mode-toggle[data-mode="and"]{
@@ -1482,7 +1486,7 @@ select[multiple]{
   opacity:1;
 }
 
-.filter-mode-toggle[data-mode="and"] .venn-diagram > i{
+.filter-mode-toggle[data-mode="and"] .venn-intersection-fill{
   opacity:.68;
 }
 
