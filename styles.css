@@ -4224,6 +4224,16 @@ table:not(.input-table) .decision-selectable-row:nth-child(even):hover td{
     overflow-wrap:anywhere;
   }
 
+  .decision-text-ref{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    min-width:28px;
+    min-height:28px;
+    padding-inline:3px;
+    vertical-align:baseline;
+  }
+
   .decision-vote-type h4,
   .decision-position-group h4,
   .meeting-attendance h3{
