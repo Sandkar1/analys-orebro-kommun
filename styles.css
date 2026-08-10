@@ -1105,6 +1105,185 @@ select[multiple]{
   padding:8px;
 }
 
+.searchable-filter-select{
+  position:relative;
+  width:100%;
+  min-width:0;
+}
+
+.searchable-filter-native{
+  display:none !important;
+}
+
+.searchable-filter-trigger{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  width:100%;
+  min-width:0;
+  min-height:40px;
+  padding:8px 10px;
+  border:1px solid var(--line-strong);
+  border-radius:var(--radius);
+  color:var(--ink);
+  background:linear-gradient(180deg,var(--cream-raised),var(--cream));
+  box-shadow:var(--shadow-control);
+  font-size:15px;
+  font-weight:400;
+  text-align:left;
+}
+
+.searchable-filter-trigger:hover,
+.searchable-filter-trigger:focus-visible,
+.searchable-filter-select.is-open .searchable-filter-trigger{
+  color:var(--ink);
+  border-color:var(--accent);
+  background:linear-gradient(180deg,var(--cream-raised),var(--cream));
+  box-shadow:var(--shadow-control);
+  transform:none;
+}
+
+.searchable-filter-trigger-text{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.searchable-filter-chevron{
+  width:7px;
+  height:7px;
+  flex:0 0 7px;
+  margin:-3px 2px 0 0;
+  border-right:1.5px solid currentColor;
+  border-bottom:1.5px solid currentColor;
+  transform:rotate(45deg);
+  opacity:.58;
+}
+
+.searchable-filter-select.is-open .searchable-filter-chevron{
+  margin-top:3px;
+  transform:rotate(225deg);
+}
+
+.searchable-filter-panel{
+  position:absolute;
+  z-index:120;
+  top:calc(100% + 4px);
+  left:0;
+  width:max(100%,280px);
+  max-width:min(360px,calc(100vw - 32px));
+  padding:5px;
+  border:1px solid #b8cbd2;
+  border-radius:var(--radius);
+  color:var(--ink);
+  background:rgba(255,250,242,.99);
+  box-shadow:0 12px 28px rgba(11,37,69,.18),0 2px 7px rgba(11,37,69,.12);
+}
+
+.searchable-filter-select.align-right .searchable-filter-panel{
+  right:0;
+  left:auto;
+}
+
+.searchable-filter-select.align-above .searchable-filter-panel{
+  top:auto;
+  bottom:calc(100% + 4px);
+}
+
+.searchable-filter-search-row{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  min-height:30px;
+  padding:0 4px 3px;
+  border-bottom:1px solid rgba(185,169,143,.34);
+}
+
+.searchable-filter-search{
+  min-width:0;
+  height:28px;
+  padding:4px 3px;
+  border:0;
+  border-radius:0;
+  outline:0;
+  color:var(--ink-soft);
+  background:transparent;
+  box-shadow:none;
+  font-size:12px;
+}
+
+.searchable-filter-search:focus{
+  border:0;
+  outline:0;
+  box-shadow:none;
+}
+
+.searchable-filter-search::placeholder{
+  color:#829098;
+  opacity:.68;
+}
+
+.searchable-filter-result-count{
+  flex:0 0 auto;
+  color:var(--muted);
+  font-size:10px;
+  white-space:nowrap;
+  opacity:.72;
+}
+
+.searchable-filter-options{
+  max-height:min(290px,45vh);
+  padding:3px 0 0;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+}
+
+.searchable-filter-option{
+  display:block;
+  width:100%;
+  min-height:32px;
+  padding:6px 8px;
+  border:0;
+  border-radius:6px;
+  color:var(--ink);
+  background:transparent;
+  box-shadow:none;
+  font-size:13px;
+  font-weight:500;
+  line-height:1.25;
+  text-align:left;
+}
+
+.searchable-filter-option:hover,
+.searchable-filter-option:focus-visible{
+  color:var(--accent-strong);
+  background:var(--cream-tint);
+  box-shadow:none;
+  transform:none;
+}
+
+.searchable-filter-option.is-utility{
+  color:var(--muted);
+  font-weight:650;
+}
+
+.searchable-filter-option.is-selected,
+.searchable-filter-option:disabled{
+  color:#738087;
+  background:rgba(185,169,143,.10);
+  cursor:default;
+  opacity:.72;
+}
+
+.searchable-filter-empty{
+  padding:12px 8px;
+  color:var(--muted);
+  font-size:12px;
+  text-align:center;
+}
+
 .raw-filter-lock{
   display:flex;
   flex-wrap:wrap;
@@ -1285,6 +1464,17 @@ select[multiple]{
   border-radius:50%;
   background:currentColor;
   opacity:0;
+}
+
+/* OR is the union of the sets, so both circles are filled. AND keeps the
+   circles quiet and emphasizes only their shared lens. */
+.filter-mode-toggle[data-mode="or"] .venn-diagram > span{
+  background:rgba(23,58,94,.20);
+  background:color-mix(in srgb,currentColor 24%,transparent);
+}
+
+.filter-mode-toggle[data-mode="and"] .venn-diagram > span{
+  background:rgba(255,255,255,.34);
 }
 
 .filter-mode-toggle[data-mode="and"]{
@@ -4266,6 +4456,10 @@ table:not(.input-table) .decision-selectable-row:nth-child(even):hover td{
   #decisionDecisionSearch,
   #decisionActivitySearch,
   .decision-activity-search-field input{
+    font-size:16px;
+  }
+
+  .searchable-filter-search{
     font-size:16px;
   }
 }

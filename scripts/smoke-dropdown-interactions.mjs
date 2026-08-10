@@ -54,9 +54,13 @@ async function waitFor(expression,attempts=200){
   return false;
 }
 async function keyboardSelect(id,stateExpression){
-  const before=await evaluate(`(()=>{const e=document.getElementById(${JSON.stringify(id)});e.scrollIntoView({block:'center'});e.focus();const r=e.getBoundingClientRect();return {value:e.value,state:${stateExpression},disabled:e.disabled,options:e.options.length,pointer:getComputedStyle(e).pointerEvents,hit:document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)?.id||''}})()`);
-  await cdp.send('Input.dispatchKeyEvent',{type:'keyDown',key:'ArrowDown',code:'ArrowDown',windowsVirtualKeyCode:40,nativeVirtualKeyCode:40});
-  await cdp.send('Input.dispatchKeyEvent',{type:'keyUp',key:'ArrowDown',code:'ArrowDown',windowsVirtualKeyCode:40,nativeVirtualKeyCode:40});
+  const before=await evaluate(`(()=>{const e=document.getElementById(${JSON.stringify(id)}),picker=document.querySelector('[data-searchable-select-for="${id}"] .searchable-filter-trigger')||e,enhanced=picker!==e;picker.scrollIntoView({block:'center'});picker.focus();const r=picker.getBoundingClientRect(),hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);return {value:e.value,state:${stateExpression},disabled:picker.disabled,options:e.options.length,pointer:getComputedStyle(picker).pointerEvents,hit:hit===picker||picker.contains(hit)?picker.id:(hit?.id||''),enhanced}})()`);
+  const press=async(key,code,virtualKey)=>{await cdp.send('Input.dispatchKeyEvent',{type:'keyDown',key,code,windowsVirtualKeyCode:virtualKey,nativeVirtualKeyCode:virtualKey});await cdp.send('Input.dispatchKeyEvent',{type:'keyUp',key,code,windowsVirtualKeyCode:virtualKey,nativeVirtualKeyCode:virtualKey});};
+  await press('ArrowDown','ArrowDown',40);
+  if(before.enhanced){
+    await wait(50);
+    await evaluate(`(()=>{const input=document.activeElement;if(!input?.classList.contains('searchable-filter-search'))return false;input.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));let active=document.activeElement;if(active?.classList.contains('searchable-filter-option'))active.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));active=document.activeElement;if(active?.classList.contains('searchable-filter-option'))active.click();return true})()`);
+  }
   const mid=await evaluate(`(()=>{const e=document.getElementById(${JSON.stringify(id)});return {value:e.value,state:${stateExpression},selectedText:e.options[e.selectedIndex]?.textContent||'',active:document.activeElement===e}})()`);
   await cdp.send('Input.dispatchKeyEvent',{type:'keyDown',key:'Tab',code:'Tab',windowsVirtualKeyCode:9,nativeVirtualKeyCode:9});
   await cdp.send('Input.dispatchKeyEvent',{type:'keyUp',key:'Tab',code:'Tab',windowsVirtualKeyCode:9,nativeVirtualKeyCode:9});
@@ -71,9 +75,28 @@ async function addAnotherFilter(id,stateExpression){
   const after=await evaluate(stateExpression);
   return {chosen,before,after};
 }
+async function auditSearchableDropdown(id,query){
+  return evaluate(`(async()=>{
+    const state=searchableFilterStatesFinal.get(${JSON.stringify(id)}),normalize=value=>fuzzySearchNormalize(searchableFilterPlainLabelFinal(value));
+    if(!state)return {enhanced:false};
+    const original=[...state.select.options].filter(option=>!/^__add_/.test(option.value)).map(option=>option.textContent.trim());
+    searchableFilterOpenFinal(state);
+    await new Promise(resolve=>requestAnimationFrame(resolve));
+    const inputVisible=!state.panel.hidden&&document.activeElement===state.input;
+    state.input.value=${JSON.stringify(query)};state.input.dispatchEvent(new Event('input',{bubbles:true}));
+    const labels=[...state.list.querySelectorAll('.searchable-filter-option')].map(option=>option.textContent.trim()),scores=labels.map(label=>searchableFilterScoreFinal(searchableFilterPlainLabelFinal(label),${JSON.stringify(query)}));
+    const anyPrefix=labels.some(label=>normalize(label).startsWith(normalize(${JSON.stringify(query)}))),firstPrefix=!!labels.length&&normalize(labels[0]).startsWith(normalize(${JSON.stringify(query)}));
+    const shortened=labels.length<original.length,reasonable=scores.every(score=>score>0),ranked=scores.every((score,index)=>!index||scores[index-1]>=score);
+    state.input.value='';state.input.dispatchEvent(new Event('input',{bubbles:true}));
+    const restored=[...state.list.querySelectorAll('.searchable-filter-option')].map(option=>option.textContent.trim());
+    const rect=state.panel.getBoundingClientRect(),insideViewport=rect.left>=0&&rect.right<=innerWidth+1;
+    searchableFilterCloseFinal(state);
+    return {enhanced:true,inputVisible,shortened,reasonable,ranked,anyPrefix,firstPrefix,restored:JSON.stringify(restored)===JSON.stringify(original),insideViewport,labels:labels.slice(0,8),scores:scores.slice(0,8)};
+  })()`);
+}
 async function auditSelects(ids){
   const result={};
-  for(const id of ids)result[id]=await evaluate(`(()=>{const e=document.getElementById(${JSON.stringify(id)});e.scrollIntoView({block:'center'});const r=e.getBoundingClientRect();return {options:e.options.length,disabled:e.disabled,pointer:getComputedStyle(e).pointerEvents,hit:document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)?.id||''}})()`);
+  for(const id of ids)result[id]=await evaluate(`(()=>{const e=document.getElementById(${JSON.stringify(id)}),picker=document.querySelector('[data-searchable-select-for="${id}"] .searchable-filter-trigger')||e;picker.scrollIntoView({block:'center'});const r=picker.getBoundingClientRect(),hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);return {options:e.options.length,disabled:picker.disabled,pointer:getComputedStyle(picker).pointerEvents,hit:hit===picker||picker.contains(hit)?picker.id:(hit?.id||'')}})()`);
   return result;
 }
 async function auditDecisionFilterResults(id){
@@ -93,7 +116,7 @@ async function auditCombinedDecisionFilterResults(){
   return result;
 }
 async function functionalSelect(id,stateExpression){
-  const before=await evaluate(`(()=>{const e=document.getElementById(${JSON.stringify(id)}),r=e.getBoundingClientRect();return {value:e.value,state:${stateExpression},disabled:e.disabled,options:e.options.length,pointer:getComputedStyle(e).pointerEvents,hit:document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)?.id||''}})()`);
+  const before=await evaluate(`(()=>{const e=document.getElementById(${JSON.stringify(id)}),picker=document.querySelector('[data-searchable-select-for="${id}"] .searchable-filter-trigger')||e,r=picker.getBoundingClientRect(),hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);return {value:e.value,state:${stateExpression},disabled:picker.disabled,options:e.options.length,pointer:getComputedStyle(picker).pointerEvents,hit:hit===picker||picker.contains(hit)?picker.id:(hit?.id||'')}})()`);
   const mid=await evaluate(`(()=>{const e=document.getElementById(${JSON.stringify(id)}),option=[...e.options].find(item=>item.value&&!item.value.startsWith('__'));e.focus();if(option){e.value=option.value;e.dispatchEvent(new Event('change',{bubbles:true}));}return {value:e.value,state:${stateExpression},selectedText:e.options[e.selectedIndex]?.textContent||'',active:document.activeElement===e}})()`);
   await evaluate(`document.getElementById(${JSON.stringify(id)}).blur()`);
   await wait(150);
@@ -128,7 +151,23 @@ try{
     await setTopView('decisionActivity');await new Promise(resolve=>requestAnimationFrame(resolve));
     await setTopView('calculator');await new Promise(resolve=>setTimeout(resolve,250));
     const awayIndex=state?.index||0,awayReady=rawReady;
-    return {startedBeforeVisit:true,startedInProgress,startIndex,awayIndex,continuedWhileAway:awayReady||awayIndex>=startIndex,sameLoadWhileAway:awayReady||rawDataPromise===refs.rawLoad,sameStateWhileAway:awayReady||rawProgressiveSearchStateFinal===state,decisionIndexContinued:decisionTableIndexCompleteFinal||decisionTableIndexPromiseFinal===refs.indexLoad,decisionCanonicalContinued:decisionCanonicalPreparationReadyFinal()||decisionCanonicalMountPromise===refs.canonicalLoad,documentsContinued:decisionActivityProgressiveSearchStateFinal===refs.activityState||!!decisionActivityProgressiveSearchStateFinal?.complete,view:currentTopView()};
+    const finalizeSwitch={observed:false,sameState:false,noReplacementScan:false,sameLoad:false};
+    for(let attempt=0;attempt<600;attempt++){
+      const current=rawProgressiveSearchStateFinal;
+      if(rawReady&&rawDataPromise&&current&&!current.complete){
+        finalizeSwitch.observed=true;
+        finalizeSwitch.sameLoad=rawDataPromise===refs.rawLoad;
+        await setTopView('raw');
+        await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+        finalizeSwitch.sameState=rawProgressiveSearchStateFinal===current;
+        finalizeSwitch.noReplacementScan=!progressiveSearchJobsFinal.has('raw');
+        await setTopView('calculator');
+        break;
+      }
+      if(rawReady&&current?.complete)break;
+      await new Promise(resolve=>setTimeout(resolve,10));
+    }
+    return {startedBeforeVisit:true,startedInProgress,startIndex,awayIndex,continuedWhileAway:awayReady||awayIndex>=startIndex,sameLoadWhileAway:awayReady||rawDataPromise===refs.rawLoad,sameStateWhileAway:awayReady||rawProgressiveSearchStateFinal===state,finalizeSwitch,decisionIndexContinued:decisionTableIndexCompleteFinal||decisionTableIndexPromiseFinal===refs.indexLoad,decisionCanonicalContinued:decisionCanonicalPreparationReadyFinal()||decisionCanonicalMountPromise===refs.canonicalLoad,documentsContinued:decisionActivityProgressiveSearchStateFinal===refs.activityState||!!decisionActivityProgressiveSearchStateFinal?.complete,view:currentTopView()};
   })()`);
   const calculatorTemplate=await evaluate(`(()=>{
     const heading=document.querySelector('#calculatorView > h2'),description=heading?.nextElementSibling;
@@ -180,20 +219,25 @@ try{
     return {sourceVariants,canonicalVariants,matchingRows:matchingRows.length,canonicalOptionCount:options.filter(value=>value==='Örebropartiet').length,aliasOptionCount:options.filter(value=>value==='ÖrP').length,display:new Set(matchingRows.map(row=>rawDisplay('party_standard',rawValue(row,'party_standard')))).size};
   })()`);
   const rawPartyOrdering=await evaluate(`(async()=>{
-    const saved=Object.fromEntries(Object.entries(rawFilterLocks).map(([key,value])=>[key,[...value]]));
+    const saved=Object.fromEntries(Object.entries(rawFilterLocks).map(([key,value])=>[key,[...value]])),savedMode=rawFilterMatchMode;
     const sample=rawRows.find(row=>String(row.year)==='2022'&&rawComparable(row,'election_type')==='municipal'&&/rebro/i.test(rawComparable(row,'municipality_name')));
     if(!sample)return {ok:false,reason:'missing-context'};
     rawFilterLocks={rawYear:['2022'],rawElection:['municipal'],rawCounty:[rawComparable(sample,'county_name')],rawMunicipality:[rawComparable(sample,'municipality_name')],rawParty:[]};
+    rawFilterMatchMode='or';
     buildRawFilters();
     for(let frame=0;frame<7;frame++)await new Promise(resolve=>requestAnimationFrame(resolve));
+    const allExpected=rawFilterOptionsFinal().parties,allActual=[...document.getElementById('rawParty').options].map(option=>option.value).filter(value=>value&&!value.startsWith('__'));
+    const allMunicipalitiesExpected=rawFilterOptionsFinal().municipalities.length,allMunicipalitiesActual=[...document.getElementById('rawMunicipality').options].filter(option=>option.value&&!option.value.startsWith('__')).length;
     const rows=rawRowsForPartyOptions(rawRows),totals=new Map();
     rows.forEach(row=>{const party=rawComparable(row,'party_standard');if(party)totals.set(party,(totals.get(party)||0)+(Number(rawValue(row,'votes'))||0));});
     const expected=[...totals].sort((a,b)=>b[1]-a[1]||rawDisplay('party_standard',a[0]).localeCompare(rawDisplay('party_standard',b[0]),'sv',{numeric:true,sensitivity:'base'})).map(([party])=>party);
+    rawFilterMatchMode='and';buildRawFilters();
+    for(let frame=0;frame<7;frame++)await new Promise(resolve=>requestAnimationFrame(resolve));
     const actual=[...document.getElementById('rawParty').options].map(option=>option.value).filter(value=>value&&!value.startsWith('__'));
     const votes=actual.map(party=>totals.get(party)||0),descending=votes.every((value,index)=>index===0||votes[index-1]>=value);
-    rawFilterLocks=saved;buildRawFilters();rawScheduleProgressiveFinal();
+    rawFilterLocks=saved;rawFilterMatchMode=savedMode;buildRawFilters();rawScheduleProgressiveFinal();
     for(let frame=0;frame<7;frame++)await new Promise(resolve=>requestAnimationFrame(resolve));
-    return {ok:descending&&JSON.stringify(actual)===JSON.stringify(expected),actual:actual.slice(0,12),votes:votes.slice(0,12),expected:expected.slice(0,12)};
+    return {ok:JSON.stringify(allActual)===JSON.stringify(allExpected)&&allMunicipalitiesActual===allMunicipalitiesExpected&&descending&&JSON.stringify(actual)===JSON.stringify(expected),orOptions:allActual.length,orMunicipalities:allMunicipalitiesActual,andOptions:actual.length,actual:actual.slice(0,12),votes:votes.slice(0,12),expected:expected.slice(0,12)};
   })()`);
   const rawInventory=await auditSelects(['rawYear','rawElection','rawCounty','rawMunicipality','rawParty']);
   const rawFunctional=await exerciseSelects(['rawYear','rawElection','rawCounty','rawMunicipality','rawParty'].map(id=>({
@@ -231,6 +275,17 @@ try{
   const calendarYearAfter=await evaluate(`(()=>{const year=document.querySelector('.date-calendar-year'),before=year.value,option=[...year.options].find(item=>item.value!==before);year.value=option.value;year.dispatchEvent(new Event('change',{bubbles:true}));return {before,after:decisionCalendarMonth.slice(0,4)}})()`);
   await evaluate(`document.getElementById('decisionDateToggle').click()`);
   const decisionInventory=await auditSelects(['decisionOrgan','decisionProposalType','decisionParty','decisionMember','decisionVote','decisionResult']);
+  const searchableDropdown=await auditSearchableDropdown('decisionMember','an');
+  const searchableDropdownPick=await evaluate(`(async()=>{
+    const id='decisionMember',state=searchableFilterStatesFinal.get(id);
+    decisionFilterLocks[id]=[];decisionReconcileFilterSelectFinal(id);searchableFilterOpenFinal(state,'an');
+    await new Promise(resolve=>requestAnimationFrame(resolve));
+    const option=state.list.querySelector('.searchable-filter-option:not(:disabled)'),value=option?.dataset.value||'';
+    option?.click();await new Promise(resolve=>requestAnimationFrame(resolve));
+    const selected=!!value&&decisionFilterLocks[id].includes(value),closed=state.panel.hidden;
+    decisionFilterLocks[id]=[];decisionReconcileFilterSelectFinal(id);renderDecisionFilterLocks();decisionScheduleProgressiveRefreshFinal();
+    return {value,selected,closed};
+  })()`);
   const decisionFunctional=await exerciseSelects(['decisionOrgan','decisionProposalType','decisionParty','decisionMember','decisionVote','decisionResult'].map(id=>({
     id,state:`JSON.stringify(decisionFilterLocks[${JSON.stringify(id)}])`,
     reset:`(()=>{decisionFilterLocks[${JSON.stringify(id)}]=[];decisionApplyBootstrapFilterOptionsFinal();decisionScheduleProgressiveRefreshFinal();return true})()`
@@ -292,24 +347,27 @@ try{
     activity:await addAnotherFilter('decisionActivityType',`JSON.stringify(decisionActivityFilters.type)`)
   };
   await evaluate(`setTopView('raw')`);
+  await evaluate(`(()=>{rawFilterMatchMode='or';rawFilterLocks.rawParty=['S'];buildRawFilters();rawScheduleProgressiveFinal();return true})()`);
+  await waitFor(`rawProgressiveSearchStateFinal?.complete&&rawProgressiveSearchStateFinal.key===rawProgressiveSearchKeyFinal()`,500);
   await waitFor(`document.querySelector('#rawFilterLocks [data-clear-all-filters]+[data-filter-mode-toggle][data-mode="or"]')`,100);
-  const rawFilterModeBefore=await evaluate(`({mode:rawFilterMatchMode,label:document.querySelector('#rawFilterLocks [data-filter-mode-toggle]')?.textContent.trim(),afterClear:!!document.querySelector('#rawFilterLocks [data-clear-all-filters]+[data-filter-mode-toggle]')})`);
+  const rawFilterModeBefore=await evaluate(`(()=>{const toggle=document.querySelector('#rawFilterLocks [data-filter-mode-toggle]'),fills=[...toggle.querySelectorAll('.venn-diagram > span')].map(circle=>getComputedStyle(circle).backgroundColor),filters={mode:rawFilterMatchMode,years:selectedRawValues('rawYear'),elections:selectedRawValues('rawElection'),counties:selectedRawValues('rawCounty'),municipalities:selectedRawValues('rawMunicipality'),parties:selectedRawValues('rawParty')},query=fuzzySearchNormalize(document.getElementById('rawSearch').value);return {mode:rawFilterMatchMode,label:toggle?.textContent.trim(),afterClear:!!document.querySelector('#rawFilterLocks [data-clear-all-filters]+[data-filter-mode-toggle]'),matches:rawProgressiveSearchStateFinal?.matches.length||0,expected:rawRows.filter(row=>rawProgressivePredicateFinal(row,filters,query)).length,locks:Object.fromEntries(Object.entries(rawFilterLocks).map(([key,value])=>[key,[...value]])),fills};})()`);
   await evaluate(`document.querySelector('#rawFilterLocks [data-filter-mode-toggle]').click()`);
   await waitFor(`rawFilterMatchMode==='and'&&rawProgressiveSearchStateFinal?.complete&&rawProgressiveSearchStateFinal.key===rawProgressiveSearchKeyFinal()`,500);
-  const rawFilterModeAfter=await evaluate(`({mode:rawFilterMatchMode,label:document.querySelector('#rawFilterLocks [data-filter-mode-toggle]')?.textContent.trim(),pressed:document.querySelector('#rawFilterLocks [data-filter-mode-toggle]')?.getAttribute('aria-pressed')})`);
+  const rawFilterModeAfter=await evaluate(`(()=>{const toggle=document.querySelector('#rawFilterLocks [data-filter-mode-toggle]'),filters={mode:rawFilterMatchMode,years:selectedRawValues('rawYear'),elections:selectedRawValues('rawElection'),counties:selectedRawValues('rawCounty'),municipalities:selectedRawValues('rawMunicipality'),parties:selectedRawValues('rawParty')},query=fuzzySearchNormalize(document.getElementById('rawSearch').value);return {mode:rawFilterMatchMode,label:toggle?.textContent.trim(),pressed:toggle?.getAttribute('aria-pressed'),matches:rawProgressiveSearchStateFinal?.matches.length||0,expected:rawRows.filter(row=>rawProgressivePredicateFinal(row,filters,query)).length,locks:Object.fromEntries(Object.entries(rawFilterLocks).map(([key,value])=>[key,[...value]])),intersectionOpacity:Number(getComputedStyle(toggle.querySelector('.venn-diagram > i')).opacity)};})()`);
   await evaluate(`setTopView('decision')`);
   await waitFor(`document.querySelector('#decisionFilterLocks [data-clear-all-filters]+[data-filter-mode-toggle][data-mode="or"]')`,100);
-  const decisionFilterModeBefore=await evaluate(`({mode:decisionFilterMatchMode,label:document.querySelector('#decisionFilterLocks [data-filter-mode-toggle]')?.textContent.trim(),afterClear:!!document.querySelector('#decisionFilterLocks [data-clear-all-filters]+[data-filter-mode-toggle]')})`);
+  const decisionFilterModeBefore=await evaluate(`(()=>{const toggle=document.querySelector('#decisionFilterLocks [data-filter-mode-toggle]'),fills=[...toggle.querySelectorAll('.venn-diagram > span')].map(circle=>getComputedStyle(circle).backgroundColor);return {mode:decisionFilterMatchMode,label:toggle?.textContent.trim(),afterClear:!!document.querySelector('#decisionFilterLocks [data-clear-all-filters]+[data-filter-mode-toggle]'),matches:decisionProgressiveSearchStateFinal?.filteredMatches.length||0,fills};})()`);
   await evaluate(`document.querySelector('#decisionFilterLocks [data-filter-mode-toggle]').click()`);
   await waitFor(`decisionFilterMatchMode==='and'&&decisionProgressiveStateIsCurrentFinal()`,500);
-  const decisionFilterModeAfter=await evaluate(`({mode:decisionFilterMatchMode,label:document.querySelector('#decisionFilterLocks [data-filter-mode-toggle]')?.textContent.trim(),pressed:document.querySelector('#decisionFilterLocks [data-filter-mode-toggle]')?.getAttribute('aria-pressed')})`);
+  const decisionFilterModeAfter=await evaluate(`(()=>{const toggle=document.querySelector('#decisionFilterLocks [data-filter-mode-toggle]');return {mode:decisionFilterMatchMode,label:toggle?.textContent.trim(),pressed:toggle?.getAttribute('aria-pressed'),matches:decisionProgressiveSearchStateFinal?.filteredMatches.length||0,intersectionOpacity:Number(getComputedStyle(toggle.querySelector('.venn-diagram > i')).opacity)};})()`);
   await evaluate(`setTopView('decisionActivity')`);
   await waitFor(`document.querySelector('#decisionActivityFilterLocks [data-clear-all-filters]+[data-filter-mode-toggle][data-mode="or"]')`,100);
-  const activityFilterModeBefore=await evaluate(`({mode:decisionActivityFilterMatchMode,label:document.querySelector('#decisionActivityFilterLocks [data-filter-mode-toggle]')?.textContent.trim(),afterClear:!!document.querySelector('#decisionActivityFilterLocks [data-clear-all-filters]+[data-filter-mode-toggle]')})`);
+  const activityFilterModeBefore=await evaluate(`(()=>{const toggle=document.querySelector('#decisionActivityFilterLocks [data-filter-mode-toggle]'),fills=[...toggle.querySelectorAll('.venn-diagram > span')].map(circle=>getComputedStyle(circle).backgroundColor);return {mode:decisionActivityFilterMatchMode,label:toggle?.textContent.trim(),afterClear:!!document.querySelector('#decisionActivityFilterLocks [data-clear-all-filters]+[data-filter-mode-toggle]'),matches:decisionActivityProgressiveSearchStateFinal?.matches.length||0,expected:filteredDecisionActivityRowsBeforeProgressiveFinal().length,fills};})()`);
   await evaluate(`document.querySelector('#decisionActivityFilterLocks [data-filter-mode-toggle]').click()`);
   await waitFor(`decisionActivityFilterMatchMode==='and'&&decisionActivityProgressiveSearchStateFinal?.complete&&decisionActivityProgressiveSearchStateFinal.key===decisionActivityProgressiveSearchKeyFinal()`,500);
-  const activityFilterModeAfter=await evaluate(`({mode:decisionActivityFilterMatchMode,label:document.querySelector('#decisionActivityFilterLocks [data-filter-mode-toggle]')?.textContent.trim(),pressed:document.querySelector('#decisionActivityFilterLocks [data-filter-mode-toggle]')?.getAttribute('aria-pressed')})`);
+  const activityFilterModeAfter=await evaluate(`(()=>{const toggle=document.querySelector('#decisionActivityFilterLocks [data-filter-mode-toggle]');return {mode:decisionActivityFilterMatchMode,label:toggle?.textContent.trim(),pressed:toggle?.getAttribute('aria-pressed'),matches:decisionActivityProgressiveSearchStateFinal?.matches.length||0,expected:filteredDecisionActivityRowsBeforeProgressiveFinal().length,intersectionOpacity:Number(getComputedStyle(toggle.querySelector('.venn-diagram > i')).opacity)};})()`);
   const filterModes={raw:{before:rawFilterModeBefore,after:rawFilterModeAfter},decision:{before:decisionFilterModeBefore,after:decisionFilterModeAfter},activity:{before:activityFilterModeBefore,after:activityFilterModeAfter}};
+  const filterSemantics=await evaluate(`({alternatives:filterSelectionMatches(['2010','2014'],'2014','and'),union:filterGroupsMatch([{active:true,matches:true},{active:true,matches:false}],'or'),intersection:filterGroupsMatch([{active:true,matches:true},{active:true,matches:false}],'and'),empty:filterGroupsMatch([],'and')})`);
   const reloadExpected=await evaluate(`({top:currentTopView(),raw:JSON.stringify(rawFilterLocks.rawYear),decision:JSON.stringify(decisionFilterLocks.decisionOrgan),activity:JSON.stringify(decisionActivityFilters.type),rawMode:rawFilterMatchMode,decisionMode:decisionFilterMatchMode,activityMode:decisionActivityFilterMatchMode,calculator:JSON.stringify(tabs.map(tab=>[tab.role,tab.title,tab.dirty,tab.parties.map(party=>[party.name,party.votes,party.icon])]))})`);
   const reloadHash=await evaluate(`(async()=>{await updateUrlHashSession();return location.hash})()`);
   await cdp.send('Page.enable');
@@ -320,12 +378,17 @@ try{
   const inventory={...rawInventory,...decisionInventory,...activityInventory};
   const functional={...rawFunctional,...decisionFunctional,...activityFunctional};
   const functionalFailures=Object.entries(functional).filter(([,item])=>item.before.disabled||item.before.options<2||item.before.state===item.after.state).map(([id,item])=>({id,mid:item.mid,after:item.after}));
-  const result={mode:fileAudit?'file':'http',functionalFailures,eagerStartup,calculatorTemplate,calculatorImport,calculator,calculatorIcon,rawProgressiveFilters,rawBackgroundLoad,rawSortReuse,rawPartyCanonical,rawPartyOrdering,inventory,functional,raw,decisionCold,decisionColdFilterResults,decisionMemberMarkers,decisionOverviewResume,calendar:{before:calendarBefore,monthAfter:calendarMonthAfter,yearAfter:calendarYearAfter},navigationDuringDecisionLoad,navigationDuringActivityLoad,decision,activity,additive,filterModes,reloadExpected,reloadHashChanged:!!reloadHash,reload,postReload};
-  console.log(JSON.stringify(filterResultsOnly?{eagerStartup,calculatorTemplate,rawProgressiveFilters,rawBackgroundLoad,rawSortReuse,rawPartyCanonical,decisionColdFilterResults,decisionMemberMarkers,decisionOverviewResume,filterModes,reload}:result,null,2));
+  const result={mode:fileAudit?'file':'http',functionalFailures,eagerStartup,calculatorTemplate,calculatorImport,calculator,calculatorIcon,rawProgressiveFilters,rawBackgroundLoad,rawSortReuse,rawPartyCanonical,rawPartyOrdering,inventory,functional,raw,decisionCold,decisionColdFilterResults,decisionMemberMarkers,searchableDropdown,searchableDropdownPick,decisionOverviewResume,calendar:{before:calendarBefore,monthAfter:calendarMonthAfter,yearAfter:calendarYearAfter},navigationDuringDecisionLoad,navigationDuringActivityLoad,decision,activity,additive,filterModes,filterSemantics,reloadExpected,reloadHashChanged:!!reloadHash,reload,postReload};
+  console.log(JSON.stringify(filterResultsOnly?{eagerStartup,calculatorTemplate,rawProgressiveFilters,rawBackgroundLoad,rawSortReuse,rawPartyCanonical,decisionColdFilterResults,decisionMemberMarkers,searchableDropdown,searchableDropdownPick,decisionOverviewResume,filterModes,filterSemantics,reload}:result,null,2));
   if(!eagerStartup.started||!eagerStartup.startedBeforeVisit||!eagerStartup.historic||!eagerStartup.decisionIndex||!eagerStartup.decisionCanonical||!eagerStartup.documents||eagerStartup.view!=='calculator'||!rawBackgroundLoad.startedBeforeVisit||!rawBackgroundLoad.decisionIndexContinued||!rawBackgroundLoad.decisionCanonicalContinued||!rawBackgroundLoad.documentsContinued)process.exitCode=1;
   if(calculatorTemplate.before.tabs!==1||calculatorTemplate.before.activeTab!==0||calculatorTemplate.before.role!=='template'||calculatorTemplate.before.title!=='Huvudvy'||calculatorTemplate.before.heading!=='Kalkylator för mandat'||!calculatorTemplate.before.description?.startsWith('Beräkna och jämför')||calculatorTemplate.before.closeButtons!==0||!calculatorTemplate.before.settingsHidden||!calculatorTemplate.before.summaryVisible||!calculatorTemplate.before.templateSummary||calculatorTemplate.before.visibleSummaryCards!==1||calculatorTemplate.before.initialVotes!=='65'||calculatorTemplate.updatedVotes!=='70'||calculatorTemplate.templateIcon.state!==2||calculatorTemplate.templateIcon.select!=='2'||!calculatorTemplate.templateIcon.src.includes('logo_m')||calculatorTemplate.calculationIcon.state!==9||calculatorTemplate.calculationIcon.select!=='9'||!calculatorTemplate.calculationIcon.src.includes('logo_op')||!calculatorTemplate.before.actionsMoved||!calculatorTemplate.before.templateVisible||!calculatorTemplate.before.addBelowTable||calculatorTemplate.afterClose.tabs!==1||calculatorTemplate.afterClose.activeTab!==0||calculatorTemplate.afterCreate.tabs!==2||calculatorTemplate.afterCreate.activeTab!==1||calculatorTemplate.afterCreate.role!=='calculation'||calculatorTemplate.afterCreate.closeButtons!==1||calculatorTemplate.afterCreate.settingsHidden||calculatorTemplate.afterCreate.summaryHidden||!calculatorTemplate.afterCreate.actionsVisible||!calculatorTemplate.afterCreate.templateHidden||!calculatorTemplate.afterCreate.importVisible||!calculatorTemplate.afterCreate.copied||!calculatorImport.sourceReady||!calculatorImport.sourceOption||!calculatorImport.copiedFromTemplate||!calculatorImport.imported||!calculatorImport.dirty||!calculatorImport.resultCleared||calculatorImport.tabCount!==3||calculatorImport.templateRole!=='template'||!rawProgressiveFilters.whileLoading||rawProgressiveFilters.yearDisabled||rawProgressiveFilters.partyDisabled||rawProgressiveFilters.yearOptions<2||rawProgressiveFilters.partyOptions<2||!rawBackgroundLoad.startedInProgress||!rawBackgroundLoad.continuedWhileAway||!rawBackgroundLoad.sameLoadWhileAway||!rawBackgroundLoad.sameStateWhileAway||!rawBackgroundLoad.sameLoadOnReturn||!rawBackgroundLoad.sameStateOnReturn||rawBackgroundLoad.view!=='raw'||!rawBackgroundLoad.completed||!rawSortReuse.sameState||!rawSortReuse.noScan||!rawSortReuse.directionChanged||!rawSortReuse.sameResults||!rawSortReuse.ordered||!rawSortReuse.sameOverviewCard||!rawSortReuse.roundTrip||!rawSortReuse.secondNoScan||!rawSortReuse.secondSameState||!rawSortReuse.secondOrdered||rawPartyCanonical.sourceVariants.length!==3||rawPartyCanonical.canonicalVariants.length!==1||rawPartyCanonical.canonicalVariants[0]!=='Örebropartiet'||rawPartyCanonical.matchingRows!==44||rawPartyCanonical.canonicalOptionCount!==1||rawPartyCanonical.aliasOptionCount!==0||rawPartyCanonical.display!==1||!rawPartyOrdering.ok||!decisionCold.bootstrap||decisionCold.options<2||Object.values(decisionColdFilterResults).some(item=>!item.selected||!item.finished||item.matches<=0)||!decisionMemberMarkers.chosen||JSON.stringify(decisionMemberMarkers.before)!==JSON.stringify(decisionMemberMarkers.locks)||decisionMemberMarkers.after.length||decisionMemberMarkers.afterLocks.length||decisionOverviewResume.actual!==decisionOverviewResume.expected||decisionOverviewResume.busy!=='false'||decisionOverviewResume.view!=='decision'||calculatorIcon.disabled||calculatorIcon.pointer==='none'||!calculatorIcon.hit||calculatorIcon.options<2||calculatorIcon.before===calculatorIcon.after||calendarBefore.monthOptions!==12||calendarBefore.yearOptions<2||!calendarBefore.hit||calendarBefore.month===calendarMonthAfter.slice(-2)||calendarYearAfter.before===calendarYearAfter.after||Object.values(inventory).some(item=>item.disabled||item.pointer==='none'||!item.hit||item.options<2)||Object.values(functional).some(item=>item.before.disabled||item.before.options<2||item.before.state===item.after.state)||Object.entries({calculator,raw,decision,activity}).some(([,item])=>item.before.disabled||item.before.pointer==='none'||!item.before.hit||item.before.options<2||item.before.state===item.after.state)||navigationDuringDecisionLoad.view!=='raw'||navigationDuringDecisionLoad.totalMs>1500||navigationDuringActivityLoad.view!=='calculator'||navigationDuringActivityLoad.switchMs>250||!navigationDuringActivityLoad.jobContinues||Object.values(additive).some(item=>!item.chosen||item.before===item.after||JSON.parse(item.after).length<2)||!reloadHash||reload.top!==reloadExpected.top||reload.raw!==reloadExpected.raw||reload.decision!==reloadExpected.decision||reload.activity!==reloadExpected.activity||reload.calculator!==reloadExpected.calculator||reload.activityOptions<2||reload.promptDisabled||!postReload.chosen||JSON.parse(postReload.after).length<3)process.exitCode=1;
   if(decisionOverviewResume.normalRows<=0||decisionOverviewResume.recoveredRows<=0||!decisionOverviewResume.sameResultState||!decisionOverviewResume.noRescan)process.exitCode=1;
-  if(Object.values(filterModes).some(item=>item.before.mode!=='or'||item.before.label!=='OR'||!item.before.afterClear||item.after.mode!=='and'||item.after.label!=='AND'||item.after.pressed!=='true'))process.exitCode=1;
+  if(!rawBackgroundLoad.finalizeSwitch.observed||!rawBackgroundLoad.finalizeSwitch.sameLoad||!rawBackgroundLoad.finalizeSwitch.sameState||!rawBackgroundLoad.finalizeSwitch.noReplacementScan)process.exitCode=1;
+  if(!searchableDropdown.enhanced||!searchableDropdown.inputVisible||!searchableDropdown.shortened||!searchableDropdown.reasonable||!searchableDropdown.ranked||searchableDropdown.anyPrefix&&!searchableDropdown.firstPrefix||!searchableDropdown.restored||!searchableDropdown.insideViewport||!searchableDropdownPick.value||!searchableDropdownPick.selected||!searchableDropdownPick.closed)process.exitCode=1;
+  if(!filterSemantics.alternatives||!filterSemantics.union||filterSemantics.intersection||!filterSemantics.empty)process.exitCode=1;
+  if(Object.values(filterModes).some(item=>item.before.mode!=='or'||item.before.label!=='OR'||!item.before.afterClear||item.before.matches<=0||item.before.fills.some(fill=>fill==='transparent'||fill==='rgba(0, 0, 0, 0)')||item.after.mode!=='and'||item.after.label!=='AND'||item.after.pressed!=='true'||item.after.matches<=0||item.after.intersectionOpacity<=0))process.exitCode=1;
+  if(filterModes.raw.before.matches!==filterModes.raw.before.expected||filterModes.raw.after.matches!==filterModes.raw.after.expected||filterModes.activity.before.matches!==filterModes.activity.before.expected||filterModes.activity.after.matches!==filterModes.activity.after.expected)process.exitCode=1;
+  if(filterModes.raw.before.matches<=filterModes.raw.after.matches)process.exitCode=1;
   if(reload.rawMode!=='and'||reload.decisionMode!=='and'||reload.activityMode!=='and'||Object.values(reload.buttonModes).some(mode=>mode!=='and'))process.exitCode=1;
 }finally{
   cdp?.close();chrome.kill();server.close();

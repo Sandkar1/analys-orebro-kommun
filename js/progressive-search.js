@@ -525,11 +525,14 @@ filteredRawRows=function(){
 };
 
 function rawProgressivePredicateFinal(row,filters,query){
-  if(!filterSelectionMatches(filters.years,rawComparable(row,'year'),rawFilterMatchMode,String))return false;
-  if(!filterSelectionMatches(filters.elections,rawComparable(row,'election_type'),rawFilterMatchMode))return false;
-  if(!filterSelectionMatches(filters.counties,rawComparable(row,'county_name'),rawFilterMatchMode))return false;
-  if(!filterSelectionMatches(filters.municipalities,rawComparable(row,'municipality_name'),rawFilterMatchMode))return false;
-  if(!filterSelectionMatches(filters.parties,rawComparable(row,'party_standard'),rawFilterMatchMode))return false;
+  const mode=filters.mode||rawFilterMatchMode;
+  if(!filterGroupsMatch([
+    {active:filters.years.length,matches:filterSelectionMatches(filters.years,rawComparable(row,'year'),mode,String)},
+    {active:filters.elections.length,matches:filterSelectionMatches(filters.elections,rawComparable(row,'election_type'),mode)},
+    {active:filters.counties.length,matches:filterSelectionMatches(filters.counties,rawComparable(row,'county_name'),mode)},
+    {active:filters.municipalities.length,matches:filterSelectionMatches(filters.municipalities,rawComparable(row,'municipality_name'),mode)},
+    {active:filters.parties.length,matches:filterSelectionMatches(filters.parties,rawComparable(row,'party_standard'),mode)}
+  ],mode))return false;
   if(!query)return true;
   const text=row.__searchText||(row.__searchText=rawColumns.map(column=>rawDisplay(column,rawValue(row,column))).join(' '));
   return fuzzySearchTextMatches(text,query);
@@ -605,6 +608,7 @@ async function rawFinalizeProgressiveStateFinal(state,job){
 
 progressiveSearchHandlersFinal.set('raw',async job=>{
   const filters={
+    mode:rawFilterMatchMode,
     years:selectedRawValues('rawYear'),
     elections:selectedRawValues('rawElection'),
     counties:selectedRawValues('rawCounty'),
@@ -735,6 +739,7 @@ progressiveSearchHandlersFinal.set('decision-activity',async job=>{
   ensureMunicipalDocumentData();
   const query=decisionSearchNormalizeFinal(decisionActivitySearchQuery);
   const filters={
+    mode:decisionActivityFilterMatchMode,
     types:selectedActivityValues('type'),
     parties:selectedActivityValues('party'),
     politicalOwners:selectedActivityValues('politicalOwner'),
@@ -756,7 +761,12 @@ progressiveSearchHandlersFinal.set('decision-activity',async job=>{
     do{
       const row=decisionActivityRows[state.index++];
       traversed++;
-      if(!decisionActivityIncludedByDate(row)||!filterSelectionMatches(filters.types,row.type,decisionActivityFilterMatchMode)||!filterSelectionMatches(filters.parties,row.party,decisionActivityFilterMatchMode)||!filterSelectionMatches(filters.politicalOwners,row.politicalOwner,decisionActivityFilterMatchMode)||!filterSelectionMatches(filters.officialOwners,row.officialOwner,decisionActivityFilterMatchMode))continue;
+      if(!decisionActivityIncludedByDate(row)||!filterGroupsMatch([
+        {active:filters.types.length,matches:filterSelectionMatches(filters.types,row.type,filters.mode)},
+        {active:filters.parties.length,matches:filterSelectionMatches(filters.parties,row.party,filters.mode)},
+        {active:filters.politicalOwners.length,matches:filterSelectionMatches(filters.politicalOwners,row.politicalOwner,filters.mode)},
+        {active:filters.officialOwners.length,matches:filterSelectionMatches(filters.officialOwners,row.officialOwner,filters.mode)}
+      ],filters.mode))continue;
       if(query&&decisionActivitySearchRelevanceFinal(row,query)<=0)continue;
       state.matches.push(row);
       decisionActivitySummaryCollectFinal(state.summary,row);
@@ -1346,17 +1356,23 @@ async function decisionApplyFilterOptionsFinal(options,job){
 
 async function decisionStableBuildBaseRowsFinal(job){
   const organs=selectedDecisionValues('decisionOrgan'),parties=selectedDecisionValues('decisionParty'),members=selectedDecisionValues('decisionMember'),votes=selectedDecisionValues('decisionVote'),results=normalizeDecisionResultFilterSelection(selectedDecisionValues('decisionResult')),types=selectedDecisionValues('decisionProposalType').map(decisionProposalTypeCanonicalFinal);
+  const mode=decisionFilterMatchMode;
   const requiresVoteMatch=parties.length||members.length||votes.length,attendanceKeys=new Set(),matchedKeys=new Set(),counts=new Map();
+  const participantMatches=row=>filterGroupsMatch([
+    {active:parties.length,matches:filterSelectionMatches(parties,municipalNorm(row.party),mode)},
+    {active:members.length,matches:filterSelectionMatches(members,row.memberKey||decisionMemberKey(row.name,row.party,row.body),mode)},
+    {active:votes.length,matches:filterSelectionMatches(votes,String(row.vote),mode)}
+  ],mode);
   if(members.length&&!votes.length){
     let started=performance.now();
     for(const row of decisionMemberRows){
-      if(decisionDateMatches(row.date)&&filterPredicateMatches(organs,value=>decisionOrganMatches([value],row.body),decisionFilterMatchMode)&&filterSelectionMatches(parties,municipalNorm(row.party),decisionFilterMatchMode)&&filterSelectionMatches(members,row.memberKey||decisionMemberKey(row.name,row.party,row.body),decisionFilterMatchMode))attendanceKeys.add(row.attendanceKey);
+      if(decisionDateMatches(row.date)&&participantMatches(row))attendanceKeys.add(row.attendanceKey);
       if(progressiveSliceExpiredFinal(started,3)){if(!await progressiveSearchFrameFinal(job))return null;started=performance.now();}
     }
   }
   let started=performance.now();
   for(const row of decisionRows){
-    if(decisionDateMatches(row.date)&&filterSelectionMatches(parties,municipalNorm(row.party),decisionFilterMatchMode)&&filterSelectionMatches(members,decisionMemberKey(row.name,row.party,row.body),decisionFilterMatchMode)&&filterSelectionMatches(votes,String(row.vote),decisionFilterMatchMode)){
+    if(decisionDateMatches(row.date)&&participantMatches(row)){
       const key=`${row.id}|${row.point}`;
       matchedKeys.add(key);
       if(!counts.has(key))counts.set(key,{voteRoundCount:0,voteCount:0,yes:0,no:0,abstain:0,absent:0,voteIds:new Set()});
@@ -1368,17 +1384,22 @@ async function decisionStableBuildBaseRowsFinal(job){
   }
   started=performance.now();
   for(const row of decisionPositionRows){
-    if(decisionDateMatches(row.date)&&filterSelectionMatches(parties,municipalNorm(row.party),decisionFilterMatchMode)&&filterSelectionMatches(members,decisionMemberKey(row.name,row.party,row.body),decisionFilterMatchMode)&&filterSelectionMatches(votes,String(row.vote),decisionFilterMatchMode))matchedKeys.add(`${row.id}|${row.point}`);
+    if(decisionDateMatches(row.date)&&participantMatches(row))matchedKeys.add(`${row.id}|${row.point}`);
     if(progressiveSliceExpiredFinal(started,3)){if(!await progressiveSearchFrameFinal(job))return null;started=performance.now();}
   }
   const output=[];
   started=performance.now();
   for(const row of decisionAllPointRows){
-    const key=`${row.id}|${row.point}`,count=counts.get(key),hasAttendance=attendanceKeys.has(row.attendanceKey);
-    if(!filterSelectionMatches(types,row?.isMeeting?'meeting':decisionProposalTypeCanonicalFinal(row.proposalType||'beslut'),decisionFilterMatchMode)||!decisionDateMatches(row.date)||!filterPredicateMatches(organs,value=>decisionOrganMatches([value],row.body),decisionFilterMatchMode)||!filterSelectionMatches(results,decisionResultFilterGroup(row.result||'beslut'),decisionFilterMatchMode)||(requiresVoteMatch&&!matchedKeys.has(key)&&!hasAttendance))continue;
+    const key=`${row.id}|${row.point}`,count=counts.get(key),hasAttendance=attendanceKeys.has(row.attendanceKey),participantMatch=!requiresVoteMatch||matchedKeys.has(key)||hasAttendance;
+    if(!decisionDateMatches(row.date)||!filterGroupsMatch([
+      {active:types.length,matches:filterSelectionMatches(types,row?.isMeeting?'meeting':decisionProposalTypeCanonicalFinal(row.proposalType||'beslut'),mode)},
+      {active:organs.length,matches:filterPredicateMatches(organs,value=>decisionOrganMatches([value],row.body),mode)},
+      {active:results.length,matches:filterSelectionMatches(results,decisionResultFilterGroup(row.result||'beslut'),mode)},
+      {active:!!requiresVoteMatch,matches:participantMatch}
+    ],mode))continue;
     const fallback={voteRoundCount:0,voteCount:0,yes:0,no:0,abstain:0,absent:0},current=count||fallback;
-    if(requiresVoteMatch&&!hasAttendance)output.push({...row,voteRoundCount:current.voteRoundCount||0,voteCount:current.voteCount||0,yes:current.yes||0,no:current.no||0,abstain:current.abstain||0,absent:current.absent||0});
-    else if(requiresVoteMatch&&hasAttendance&&!count)output.push({...row,voteRoundCount:row.fullVoteRoundCount||0,voteCount:row.fullVoteCount||0,yes:row.fullYes||0,no:row.fullNo||0,abstain:row.fullAbstain||0,absent:row.fullAbsent||0});
+    if(requiresVoteMatch&&participantMatch&&!hasAttendance)output.push({...row,voteRoundCount:current.voteRoundCount||0,voteCount:current.voteCount||0,yes:current.yes||0,no:current.no||0,abstain:current.abstain||0,absent:current.absent||0});
+    else if(requiresVoteMatch&&participantMatch&&hasAttendance&&!count)output.push({...row,voteRoundCount:row.fullVoteRoundCount||0,voteCount:row.fullVoteCount||0,yes:row.fullYes||0,no:row.fullNo||0,abstain:row.fullAbstain||0,absent:row.fullAbsent||0});
     else{
       const yes=decisionPreferNamedCount(current.yes||row.fullYes,row.statedYes),no=decisionPreferNamedCount(current.no||row.fullNo,row.statedNo),abstain=decisionPreferNamedCount(current.abstain||row.fullAbstain,row.statedAbstain),absent=decisionPreferNamedCount(current.absent||row.fullAbsent,row.statedAbsent);
       output.push({...row,yes,no,abstain,absent,voteCount:Math.max(current.voteCount||0,row.fullVoteCount||0,yes+no+abstain+absent),voteRoundCount:Math.max(current.voteRoundCount||0,row.fullVoteRoundCount||0,(row.voteIds||[]).length)});
@@ -1503,19 +1524,21 @@ function decisionShouldUseTableIndexFinal(){
   return !decisionTableIndexErrorFinal||!decisionCanonicalPreparationReadyFinal();
 }
 
-function decisionTableIndexPredicateFinal(row,query){
+function decisionTableIndexPredicateFinal(row,query,mode=decisionFilterMatchMode){
   const organs=selectedDecisionValues('decisionOrgan'),results=normalizeDecisionResultFilterSelection(selectedDecisionValues('decisionResult')),types=selectedDecisionValues('decisionProposalType').map(decisionProposalTypeCanonicalFinal);
   if(!decisionDateMatches(row.date))return false;
-  if(!filterPredicateMatches(organs,value=>decisionOrganMatches([value],row.body),decisionFilterMatchMode))return false;
-  if(!filterSelectionMatches(results,decisionResultFilterGroup(row.result||'beslut'),decisionFilterMatchMode))return false;
-  if(!filterSelectionMatches(types,row?.isMeeting?'meeting':decisionProposalTypeCanonicalFinal(row.proposalType||'beslut'),decisionFilterMatchMode))return false;
+  if(!filterGroupsMatch([
+    {active:organs.length,matches:filterPredicateMatches(organs,value=>decisionOrganMatches([value],row.body),mode)},
+    {active:results.length,matches:filterSelectionMatches(results,decisionResultFilterGroup(row.result||'beslut'),mode)},
+    {active:types.length,matches:filterSelectionMatches(types,row?.isMeeting?'meeting':decisionProposalTypeCanonicalFinal(row.proposalType||'beslut'),mode)}
+  ],mode))return false;
   if(!query)return true;
   const quickQuery=fuzzySearchNormalize(query);
   return decisionStableQuickSearchTextFinal(row).includes(quickQuery)||decisionStableSearchMatchesFinal(row,query);
 }
 
 async function decisionRunTableIndexJobFinal(job){
-  const query=decisionProgressiveSearchKeyFinal(),baseFilterKey=decisionStableBaseFilterKeyFinal();
+  const query=decisionProgressiveSearchKeyFinal(),baseFilterKey=decisionStableBaseFilterKeyFinal(),mode=decisionFilterMatchMode;
   const sortKey=`${decisionSortColumn}|${decisionSortDir}|${decisionPageSize()}`;
   const compare=(a,b)=>decisionSearchSortCompareFinal(a,b,query);
   const state={fromTableIndex:true,key:query,baseFilterKey,sortKey,dataKey:'table-index',matches:new Set(),filteredMatches:[],previewRows:[],sortedRows:[],summary:decisionSummaryAccumulatorFinal(),index:0,total:decisionTableIndexTotalFinal,progressIndex:0,progressTotal:decisionTableIndexTotalFinal,complete:true,finished:false,initialLoad:!decisionInitialLoadCompleteFinal&&!query,hasPainted:false,paintPending:false,revealCount:0};
@@ -1532,7 +1555,7 @@ async function decisionRunTableIndexJobFinal(job){
       do{
         const row=decisionTableIndexRowsFinal[state.index++];
         traversed++;processed=true;
-        if(decisionTableIndexPredicateFinal(row,query)){
+        if(decisionTableIndexPredicateFinal(row,query,mode)){
           state.matches.add(row);
           state.filteredMatches.push(row);
           decisionSummaryCollectFinal(state.summary,row);
@@ -2113,16 +2136,16 @@ buildRawFilters=function(){
   const options=rawFilterOptionsFinal();
   if(!options){renderRawFilterLocks();return;}
   const revision=++rawFilterControlRevisionFinal;
-  const selectedCounties=selectedRawValues('rawCounty');
-  const municipalities=selectedCounties.length?new Set(selectedCounties.flatMap(county=>[...(options.municipalitiesByCounty.get(county)||[])])):new Set(options.municipalities);
-  rawFilterLocks.rawMunicipality=selectedRawValues('rawMunicipality').filter(value=>municipalities.has(value));
+  const selectedCounties=selectedRawValues('rawCounty'),isOr=rawFilterMatchMode==='or';
+  const municipalities=!isOr&&selectedCounties.length?new Set(selectedCounties.flatMap(county=>[...(options.municipalitiesByCounty.get(county)||[])])):new Set(options.municipalities);
+  if(!isOr)rawFilterLocks.rawMunicipality=selectedRawValues('rawMunicipality').filter(value=>municipalities.has(value));
   renderRawFilterLocks();
   const fields=[
     ['rawYear',options.years,rawFilterLocks.rawYear,'year'],
     ['rawElection',options.elections,rawFilterLocks.rawElection,'election_type'],
     ['rawCounty',options.counties,rawFilterLocks.rawCounty,'county_name'],
     ['rawMunicipality',[...municipalities].sort((a,b)=>String(a).localeCompare(String(b),'sv',{numeric:true})),rawFilterLocks.rawMunicipality,'municipality_name'],
-    ['rawParty',rawPartyOptionsByCurrentContext(rawRows),rawFilterLocks.rawParty,'party_standard']
+    ['rawParty',isOr?options.parties:rawPartyOptionsByCurrentContext(rawRows),rawFilterLocks.rawParty,'party_standard']
   ];
   let index=0;
   const applyNext=()=>{
@@ -2179,6 +2202,12 @@ renderRawFilterLocks=function(){
 renderRawTable=function(){
   if(!rawRows.length)return rawStableRenderRowsFinal([],null,{complete:true});
   const state=rawProgressiveSearchStateFinal;
+  /* The initial loader owns its progressive state until rawDataPromise
+     settles. rawReady becomes true slightly earlier, before cooperative
+     sorting and row reveal are done. A tab switch in that window used to
+     schedule a competing scan, replace this state, and visibly reset the
+     counter. Keep painting the owned state and let the original load finish. */
+  if(rawDataPromise&&state&&!state.complete){rawProgressivePaintFinal(state,false);return;}
   if(!state||state.key!==rawProgressiveSearchKeyFinal()||!state.complete){rawScheduleProgressiveFinal();return;}
   rawStableRenderRowsFinal(state.sortedRows,null,{complete:true,state});
 };
@@ -2280,7 +2309,7 @@ function rawLoadHistoricWorkerFinal(worker){
       if(message.type==='historic-meta'){
         rawColumns=(message.columns||[]).filter(column=>!rawHiddenColumns.has(column));
         rawRows=[];
-        filters={years:selectedRawValues('rawYear'),elections:selectedRawValues('rawElection'),counties:selectedRawValues('rawCounty'),municipalities:selectedRawValues('rawMunicipality'),parties:selectedRawValues('rawParty')};
+        filters={mode:rawFilterMatchMode,years:selectedRawValues('rawYear'),elections:selectedRawValues('rawElection'),counties:selectedRawValues('rawCounty'),municipalities:selectedRawValues('rawMunicipality'),parties:selectedRawValues('rawParty')};
         query=fuzzySearchNormalize($('rawSearch')?.value||'');filterAccumulator=rawFilterAccumulatorFinal();
         state={key:rawProgressiveSearchKeyFinal(),matches:[],visibleRows:[],previewEligible:[],previewIneligible:[],sortedRows:[],summary:rawOverviewAccumulatorFinal(),index:0,total:Number(message.total)||0,initialLoad:true,hasPainted:false,paintPending:false,revealEligible:0,revealIneligible:0};
         rawProgressiveSearchStateFinal=state;
@@ -2329,7 +2358,7 @@ ensureRawData=async function(){
       const sourceRows=Array.isArray(packed)?packed:(packed.r||packed.rows||[]),stringColumns=new Set(packed?.sc||[]),strings=packed?.s||[];
       rawColumns=sourceColumns.filter(column=>!rawHiddenColumns.has(column));
       rawRows=[];
-      const filters={years:selectedRawValues('rawYear'),elections:selectedRawValues('rawElection'),counties:selectedRawValues('rawCounty'),municipalities:selectedRawValues('rawMunicipality'),parties:selectedRawValues('rawParty')};
+      const filters={mode:rawFilterMatchMode,years:selectedRawValues('rawYear'),elections:selectedRawValues('rawElection'),counties:selectedRawValues('rawCounty'),municipalities:selectedRawValues('rawMunicipality'),parties:selectedRawValues('rawParty')};
       const query=fuzzySearchNormalize($('rawSearch')?.value||''),filterAccumulator=rawFilterAccumulatorFinal();
       const state={key:rawProgressiveSearchKeyFinal(),matches:[],visibleRows:[],previewEligible:[],previewIneligible:[],sortedRows:[],summary:rawOverviewAccumulatorFinal(),index:0,total:sourceRows.length,initialLoad:true,hasPainted:false,paintPending:false,revealEligible:0,revealIneligible:0};
       rawProgressiveSearchStateFinal=state;

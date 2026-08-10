@@ -140,7 +140,12 @@ async function setTopView(name){
   $('calculatorView').classList.toggle('active',calc);$('rawDataView').classList.toggle('active',raw);$('decisionView').classList.toggle('active',decision);$('decisionActivityView').classList.toggle('active',decisionActivity);
   $('calculatorTopTab').classList.toggle('active',calc);$('rawTopTab').classList.toggle('active',raw);$('decisionTopTab').classList.toggle('active',decision);$('decisionActivityTopTab').classList.toggle('active',decisionActivity);
   animateUiRegion(activeView);
-  if(raw&&!rawReady){
+  /* rawReady means that every source row has been materialized, not that the
+     progressive sort/presentation pass has finished. During that short final
+     phase rawDataPromise is still the owner of the state. Re-entering the tab
+     must repaint that state instead of asking renderRawTable() to start a new
+     full scan from zero. */
+  if(raw&&(!rawReady||rawDataPromise)){
     resumeRawBackgroundLoadFinal(activeView);
   }else if(raw)renderRawTable();
   if(decision){

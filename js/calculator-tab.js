@@ -3,9 +3,18 @@ const $=id=>document.getElementById(id);
 let calcAllocationSortColumn='order',calcAllocationSortDir='asc';
 const copy=o=>structuredClone(o);
 function esc(v){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-function filterSelectionMatches(values,actual,mode='or',normalize=value=>String(value??'')){const selected=Array.isArray(values)?values:[];if(!selected.length)return true;const candidate=normalize(actual),matches=value=>normalize(value)===candidate;return mode==='and'?selected.every(matches):selected.some(matches);}
-function filterPredicateMatches(values,predicate,mode='or'){const selected=Array.isArray(values)?values:[];if(!selected.length)return true;return mode==='and'?selected.every(predicate):selected.some(predicate);}
-function filterModeToggleHtml(mode='or'){const current=mode==='and'?'and':'or',label=current==='and'?'AND':'OR',description=current==='and'?'Alla val i varje filter måste matcha. Klicka för OR.':'Något av valen i varje filter måste matcha. Klicka för AND.';return `<button type="button" class="filter-mode-toggle" data-filter-mode-toggle data-mode="${current}" aria-pressed="${current==='and'}" title="${description}" aria-label="Filterläge ${label}. ${description}"><span class="venn-diagram" aria-hidden="true"><span></span><span></span><i></i></span><span class="filter-mode-label">${label}</span></button>`;}
+/* Values within one categorical filter are alternatives: a record cannot be
+   both 2010 and 2014, or two different parties, at the same time. AND/OR is
+   therefore applied between active filter groups, never between values in a
+   single group. */
+function filterSelectionMatches(values,actual,_mode='or',normalize=value=>String(value??'')){const selected=Array.isArray(values)?values:[];if(!selected.length)return true;const candidate=normalize(actual);return selected.some(value=>normalize(value)===candidate);}
+function filterPredicateMatches(values,predicate,_mode='or'){const selected=Array.isArray(values)?values:[];if(!selected.length)return true;return selected.some(predicate);}
+function filterGroupsMatch(groups,mode='and'){
+  const active=(groups||[]).filter(group=>!!group?.active);
+  if(!active.length)return true;
+  return mode==='or'?active.some(group=>!!group.matches):active.every(group=>!!group.matches);
+}
+function filterModeToggleHtml(mode='or'){const current=mode==='and'?'and':'or',label=current==='and'?'AND':'OR',description=current==='and'?'Alla aktiva filter måste matcha. Klicka för OR.':'Minst ett aktivt filter måste matcha. Klicka för AND.';return `<button type="button" class="filter-mode-toggle" data-filter-mode-toggle data-mode="${current}" aria-pressed="${current==='and'}" title="${description}" aria-label="Filterläge ${label}. ${description}"><span class="venn-diagram" aria-hidden="true"><span></span><span></span><i></i></span><span class="filter-mode-label">${label}</span></button>`;}
 const iconOptions=[
   {id:0,label:'Ingen ikon',src:'Logos/logo_none.png'},
   {id:1,label:'Socialdemokraterna',src:'Logos/logo_s.jpg'},

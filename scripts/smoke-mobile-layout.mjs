@@ -84,6 +84,11 @@ try{
   await evaluate(`document.getElementById('rawTopTab').click()`);
   await waitFor(`typeof rawReady!=='undefined'&&rawReady&&document.getElementById('rawEligibleBody').children.length>0`);
   results.push(await audit('historic',390));
+  await evaluate(`(()=>{const state=searchableFilterStatesFinal.get('rawMunicipality');state.trigger.scrollIntoView({block:'end'});searchableFilterOpenFinal(state);state.input.value='öre';state.input.dispatchEvent(new Event('input',{bubbles:true}));return true})()`);
+  await waitFor(`!searchableFilterStatesFinal.get('rawMunicipality').panel.hidden&&searchableFilterStatesFinal.get('rawMunicipality').list.children.length>0`);
+  results.push(await audit('historic-searchable-dropdown',390));
+  const searchableDropdownRect=await evaluate(`(()=>{const state=searchableFilterStatesFinal.get('rawMunicipality'),panel=state.panel.getBoundingClientRect(),input=state.input.getBoundingClientRect();return {left:panel.left,right:panel.right,top:panel.top,bottom:panel.bottom,viewportWidth:innerWidth,viewportHeight:innerHeight,inputFont:Number.parseFloat(getComputedStyle(state.input).fontSize),results:state.list.querySelectorAll('.searchable-filter-option').length};})()`);
+  await evaluate(`searchableFilterCloseFinal(searchableFilterStatesFinal.get('rawMunicipality'))`);
 
   await evaluate(`document.getElementById('decisionTopTab').click()`);
   await waitFor(`document.getElementById('decisionBody').children.length>0`,800);
@@ -132,9 +137,9 @@ try{
   await cdp.send('Emulation.setDeviceMetricsOverride',{width:1280,height:800,deviceScaleFactor:1,mobile:false});await wait(50);
   const desktopWrapper=await evaluate(`getComputedStyle(document.querySelector('.mobile-table-scroll')).display`);
   const failures=results.filter(item=>item.innerWidth!==item.width||item.pageScrollWidth>item.clientWidth+1||item.outside.length||item.tinyControls.length);
-  const output={failures,calculatorScroll,decisionSwitchStability,decisionLayout,calendarRect,dialogRect,desktopWrapper,results};
+  const output={failures,calculatorScroll,searchableDropdownRect,decisionSwitchStability,decisionLayout,calendarRect,dialogRect,desktopWrapper,results};
   console.log(JSON.stringify(output,null,2));
-  if(failures.length||!calculatorScroll.inputScrollable||!calculatorScroll.resultScrollable||decisionSwitchStability.originalRows<=0||decisionSwitchStability.cycles.some(cycle=>!cycle.sameState||!cycle.current||cycle.job||!cycle.finished||cycle.rows<=0)||calendarRect.left<0||calendarRect.right>calendarRect.viewport+1||dialogRect.top<0||dialogRect.bottom>dialogRect.viewportHeight+1||desktopWrapper!=='contents')process.exitCode=1;
+  if(failures.length||!calculatorScroll.inputScrollable||!calculatorScroll.resultScrollable||searchableDropdownRect.left<0||searchableDropdownRect.right>searchableDropdownRect.viewportWidth+1||searchableDropdownRect.top<0||searchableDropdownRect.bottom>searchableDropdownRect.viewportHeight+1||searchableDropdownRect.inputFont<16||searchableDropdownRect.results<=0||decisionSwitchStability.originalRows<=0||decisionSwitchStability.cycles.some(cycle=>!cycle.sameState||!cycle.current||cycle.job||!cycle.finished||cycle.rows<=0)||calendarRect.left<0||calendarRect.right>calendarRect.viewport+1||dialogRect.top<0||dialogRect.bottom>dialogRect.viewportHeight+1||desktopWrapper!=='contents')process.exitCode=1;
 }finally{
   cdp?.close();chrome.kill();server.close();await wait(300);await rm(profile,{recursive:true,force:true}).catch(()=>{});
 }
