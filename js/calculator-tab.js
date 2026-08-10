@@ -64,7 +64,7 @@ function syncCalculateAttention(){const btn=$('calculate');if(btn)btn.classList.
 function markDirtyUi(){renderTabs();syncCalculateAttention();}
 function compactSnapshot(snapshot){return [snapshot.cardVotes,snapshot.cardSeatsLabel,snapshot.cardSeats,snapshot.cardParties,snapshot.cardLotteries,snapshot.resultSections,snapshot.stepSections];}
 function expandSnapshot(snapshot){if(Array.isArray(snapshot))return {cardVotes:snapshot[0]??'—',cardSeatsLabel:snapshot[1]??'Mandat',cardSeats:snapshot[2]??'—',cardParties:snapshot[3]??'—',cardLotteries:snapshot[4]??'—',resultSections:snapshot[5]??'',stepSections:snapshot[6]??''};return snapshot;}
-function syncMethodFields(){const isDhondt=$('method').value==='dhondt';$('factor').disabled=isDhondt;$('factor').parentElement.style.opacity=isDhondt?'.55':'1';$('memberSeats')?.parentElement&&( $('memberSeats').parentElement.style.display=isDhondt?'flex':'none');$('substituteSeats')?.parentElement&&( $('substituteSeats').parentElement.style.display=isDhondt?'flex':'none');$('seats').parentElement.style.display=isDhondt?'none':'flex';}
+function syncMethodFields(){const isDhondt=$('method').value==='dhondt';$('calcSettings').classList.toggle('adjusted-method',!isDhondt);$('factor').disabled=isDhondt;$('factor').parentElement.style.opacity=isDhondt?'.55':'1';$('memberSeats')?.parentElement&&( $('memberSeats').parentElement.style.display=isDhondt?'flex':'none');$('substituteSeats')?.parentElement&&( $('substituteSeats').parentElement.style.display=isDhondt?'flex':'none');$('seats').parentElement.style.display=isDhondt?'none':'flex';}
 function makeTab(data,title){const d=copy(data);return {id:nextTabId++,role:d.role==='template'?'template':'calculation',title:title||d.title||`Beräkning ${nextTabId}`,method:d.method||'dhondt',factor:d.factor||'1.2',seats:Number(d.seats)||17,memberSeats:Number(d.memberSeats??d.seats)||17,substituteSeats:Number(d.substituteSeats??11)||11,seed:String(d.seed||newSeed()),sourceTotalVotes:d.sourceTotalVotes??null,parties:(d.parties||[]).map((p,i)=>({id:p.id??Date.now()+i,name:p.name||`Parti eller samverkansgrupp ${i+1}`,votes:Number(p.votes)||0,icon:normalizeCalcIcon(p.icon),order:i})),result:null,dirty:d.role==='template'?false:true};}
 function current(){return tabs[activeTab];}
 function isTemplateTab(value=activeTab){const tab=typeof value==='number'?tabs[value]:value;return !!tab&&tab.role==='template';}
@@ -109,13 +109,86 @@ function lotteriesOnLastMandate(result){
 }
 function calculateCurrent(){if(isTemplateTab()){showNotice('Skapa en beräkningsflik för att beräkna mandat.');return;}try{readInputs(false);const t=current();t.result=runCalculation(t);t.snapshot=buildResultSnapshot(t);t.dirty=false;clearError();showNotice('');renderAll();}catch(e){showError(e.message);}}
 function closeCalcTab(index){const closing=Number(index);if(closing===0||isTemplateTab(closing)||tabs.length<2)return;readInputs(false);tabs.splice(closing,1);if(closing<activeTab)activeTab--;else if(closing===activeTab)activeTab=Math.min(closing,tabs.length-1);activeTab=Math.max(0,activeTab);renderAll();}
-function renderTabs(){const box=$('tabs');box.innerHTML=tabs.map((t,i)=>{const template=isTemplateTab(t),dirty=!template&&t.dirty;return `<span class="tab-wrap ${template?'template-tab':''} ${i===activeTab?'active':''} ${dirty?'dirty':''}"><button class="tab tab-select ${i===activeTab?'active':''} ${dirty?'dirty':''}" data-i="${i}" type="button">${esc(template?'Huvudvy':t.title)}</button>${template?'':`<button class="calc-tab-close" data-i="${i}" type="button" aria-label="Stäng ${esc(t.title)}">×</button>`}</span>`;}).join('');box.querySelectorAll('.tab-select').forEach(b=>b.onclick=()=>{readInputs(false);activeTab=Number(b.dataset.i);renderAll();animateUiRegion($('calculatorView'));});box.querySelectorAll('.calc-tab-close').forEach(b=>b.onclick=e=>{e.stopPropagation();closeCalcTab(b.dataset.i);});}
+let calcTabDrag=null,calcTabSuppressClickUntil=0;
+function reorderCalculationTabsFromDom(box){
+  const activeId=current()?.id,byId=new Map(tabs.map(tab=>[String(tab.id),tab]));
+  const ordered=[...box.querySelectorAll('.tab-wrap[data-tab-id]')].map(wrap=>byId.get(wrap.dataset.tabId)).filter(Boolean);
+  if(!isTemplateTab(ordered[0])||ordered.length!==tabs.length)return false;
+  readInputs(false);
+  tabs=ordered;
+  activeTab=Math.max(0,tabs.findIndex(tab=>tab.id===activeId));
+  return true;
+}
+function finishCalcTabDrag(commit=true){
+  const drag=calcTabDrag;
+  if(!drag)return;
+  calcTabDrag=null;
+  drag.wrap.classList.remove('dragging');
+  drag.select.removeAttribute('aria-grabbed');
+  document.body.classList.remove('calc-tab-dragging');
+  if(drag.started){
+    calcTabSuppressClickUntil=Date.now()+350;
+    if(commit&&reorderCalculationTabsFromDom(drag.box)){
+      renderAll();
+      if(typeof scheduleUrlHashUpdate==='function')scheduleUrlHashUpdate(0);
+    }else renderTabs();
+  }
+}
+function moveCalcTabDrag(event){
+  const drag=calcTabDrag;
+  if(!drag||event.pointerId!==drag.pointerId)return;
+  const dx=event.clientX-drag.startX,dy=event.clientY-drag.startY;
+  if(!drag.started){
+    if(Math.hypot(dx,dy)<7)return;
+    if(drag.pointerType==='touch'&&Math.abs(dy)>Math.abs(dx)){finishCalcTabDrag(false);return;}
+    drag.started=true;
+    drag.wrap.classList.add('dragging');
+    drag.select.setAttribute('aria-grabbed','true');
+    document.body.classList.add('calc-tab-dragging');
+  }
+  if(event.cancelable)event.preventDefault();
+  const stripRect=drag.box.getBoundingClientRect(),edge=Math.min(48,stripRect.width*.14);
+  if(event.clientX<stripRect.left+edge)drag.box.scrollLeft-=18;
+  else if(event.clientX>stripRect.right-edge)drag.box.scrollLeft+=18;
+  const target=[...drag.box.querySelectorAll('.tab-wrap[data-tab-id]:not(.template-tab):not(.dragging)')].find(wrap=>{
+    const rect=wrap.getBoundingClientRect();
+    return event.clientX>=rect.left&&event.clientX<=rect.right&&event.clientY>=rect.top&&event.clientY<=rect.bottom;
+  });
+  if(!target)return;
+  const targetRect=target.getBoundingClientRect();
+  if(event.clientX<targetRect.left+targetRect.width/2){
+    if(drag.wrap.nextElementSibling!==target)target.before(drag.wrap);
+  }else if(target.nextElementSibling!==drag.wrap)target.after(drag.wrap);
+}
+function startCalcTabDrag(event){
+  if(event.button!==undefined&&event.button!==0)return;
+  const select=event.currentTarget,wrap=select.closest('.tab-wrap');
+  if(!wrap||wrap.classList.contains('template-tab'))return;
+  calcTabDrag={box:$('tabs'),wrap,select,pointerId:event.pointerId,pointerType:event.pointerType,startX:event.clientX,startY:event.clientY,started:false};
+  select.setPointerCapture?.(event.pointerId);
+}
+function renderTabs(){
+  const box=$('tabs');
+  box.innerHTML=tabs.map((t,i)=>{const template=isTemplateTab(t),dirty=!template&&t.dirty;return `<span class="tab-wrap ${template?'template-tab':'draggable-tab'} ${i===activeTab?'active':''} ${dirty?'dirty':''}" data-tab-id="${t.id}"><button class="tab tab-select ${i===activeTab?'active':''} ${dirty?'dirty':''}" data-i="${i}" type="button" ${template?'':`aria-label="${esc(t.title)}. Dra för att flytta fliken"`}>${esc(template?'Huvudvy':t.title)}</button>${template?'':`<button class="calc-tab-close" data-i="${i}" type="button" aria-label="Stäng ${esc(t.title)}">×</button>`}</span>`;}).join('')+'<button id="newTab" class="secondary calc-new-tab" type="button">+ Ny beräkning</button>';
+  box.querySelectorAll('.tab-select').forEach(button=>{
+    button.onclick=()=>{if(Date.now()<calcTabSuppressClickUntil)return;readInputs(false);activeTab=Number(button.dataset.i);renderAll();animateUiRegion($('calculatorView'));};
+    if(!button.closest('.template-tab')){
+      button.onpointerdown=startCalcTabDrag;
+    }
+  });
+  box.querySelectorAll('.calc-tab-close').forEach(button=>button.onclick=event=>{event.stopPropagation();closeCalcTab(button.dataset.i);});
+  $('newTab').onclick=createCalculationFromTemplate;
+}
+document.addEventListener('pointermove',moveCalcTabDrag,{passive:false});
+document.addEventListener('pointerup',event=>{if(calcTabDrag?.pointerId===event.pointerId)finishCalcTabDrag(true);});
+document.addEventListener('pointercancel',event=>{if(calcTabDrag?.pointerId===event.pointerId)finishCalcTabDrag(false);});
+window.addEventListener('blur',()=>finishCalcTabDrag(false));
 function calculationMandateRows(tab){const result=tab?.result;if(!result)return [];if(result.method==='dhondt'){const substitutes=new Map(result.substitutes.allocation.map(party=>[party.id,party.seats]));return result.members.allocation.map((party,index)=>({...party,votes:(Number(party.seats)||0)+(Number(substitutes.get(party.id))||0),order:index}));}return result.adjusted.allocation.map((party,index)=>({...party,votes:Number(party.seats)||0,order:index}));}
 function calculationImportSources(){return tabs.slice(1).filter(tab=>tab.id!==current()?.id);}
 function renderCalculationImportTools(){const template=isTemplateTab(),tools=$('calcImportTools'),select=$('calcImportSource'),apply=$('calcImportApply');tools.hidden=template;if(template)return;const previous=select.value,sources=calculationImportSources(),ready=sources.filter(tab=>tab.result&&!tab.dirty);select.innerHTML='<option value="">Välj beräkningsflik...</option>'+sources.map(tab=>`<option value="${tab.id}" ${tab.result&&!tab.dirty?'':'disabled'}>${esc(tab.title+(tab.result&&!tab.dirty?'':' – behöver beräknas'))}</option>`).join('');if([...select.options].some(option=>option.value===previous&&!option.disabled))select.value=previous;select.disabled=!ready.length;select.title=ready.length?'Välj en färdigberäknad flik':'Det finns ingen annan färdigberäknad flik att importera från.';apply.disabled=!select.value;}
 function syncCalculationImportButton(){$('calcImportApply').disabled=!$('calcImportSource').value;}
 function importCalculationMandates(){readInputs(false);const source=tabs.find(tab=>tab.id===Number($('calcImportSource').value)),target=current();if(!source||source===target||source.dirty||!source.result){showError('Välj en annan färdigberäknad flik att importera från.');return;}const imported=calculationMandateRows(source);if(!imported.length){showError('Den valda fliken saknar en mandatfördelning att importera.');return;}target.parties=imported.map((party,index)=>({id:party.id,name:party.name,votes:Number(party.votes)||0,icon:normalizeCalcIcon(party.icon),order:index}));target.sourceTotalVotes=null;target.result=null;target.snapshot=buildResultSnapshot(target);target.seed=newSeed();target.dirty=true;clearError();renderAll();showNotice(`Mandaten från ${source.title} har lagts in som röster. Tryck Beräkna mandat för att uppdatera resultatet.`);}
-function renderCalculatorMode(){const template=isTemplateTab();$('calcTemplateIntro').hidden=!template;$('calcSettings').hidden=template;$('calcActions').hidden=template;$('calcSummary').hidden=false;$('calcSummary').classList.toggle('calc-template-summary',template);$('resultSections').hidden=template;$('stepSections').hidden=template;$('duplicateTab').hidden=template;$('calcInputTitle').textContent=template?'Partimall':'Indata';renderCalculationImportTools();}
+function renderCalculatorMode(){const template=isTemplateTab();$('calcTemplateIntro').hidden=!template;$('calcSettings').hidden=template;$('calcActions').hidden=false;$('calculate').hidden=template;$('reroll').hidden=template;$('calcSummary').hidden=false;$('calcSummary').classList.toggle('calc-template-summary',template);$('resultSections').hidden=template;$('stepSections').hidden=template;$('duplicateTab').hidden=template;$('calcInputTitle').textContent=template?'Partimall':'Indata';renderCalculationImportTools();}
 function renderInputs(){
   const t=current();
   $('tabTitle').value=t.title;$('method').value=t.method;$('factor').value=t.factor;$('seats').value=t.seats;$('memberSeats').value=t.memberSeats;$('substituteSeats').value=t.substituteSeats;syncMethodFields();

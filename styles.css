@@ -345,6 +345,7 @@ button,
 
 .tabs{
   display:flex;
+  align-items:center;
   gap:7px;
   flex-wrap:wrap;
   margin:16px 0 10px;
@@ -364,6 +365,31 @@ button,
   background:var(--secondary-button-bg);
   box-shadow:var(--secondary-button-shadow);
   transition:transform 180ms ease-out,box-shadow 220ms ease-out,background 220ms ease-out,border-color 220ms ease-out;
+}
+
+.tab-wrap.draggable-tab .tab-select{
+  cursor:grab;
+  touch-action:pan-y pinch-zoom;
+}
+
+.tab-wrap.dragging,
+.tab-wrap.dragging:hover,
+.tab-wrap.dragging:focus-within{
+  z-index:5;
+  opacity:.7;
+  transform:scale(.98);
+  box-shadow:0 10px 22px rgba(11,37,69,.25);
+}
+
+.tab-wrap.dragging .tab-select{
+  cursor:grabbing;
+}
+
+body.calc-tab-dragging,
+body.calc-tab-dragging *{
+  cursor:grabbing !important;
+  user-select:none !important;
+  -webkit-user-select:none !important;
 }
 
 .tab-wrap.active{
@@ -503,6 +529,15 @@ button,
   box-shadow:var(--panel-shadow);
 }
 
+#calcSettings.adjusted-method{
+  grid-template-columns:minmax(170px,1fr) minmax(260px,1.45fr) minmax(90px,.4fr) minmax(100px,.45fr);
+}
+
+#calcSettings.adjusted-method .method-params{
+  grid-column:auto;
+  display:block;
+}
+
 .raw-toolbar{
   grid-template-columns:repeat(6,minmax(130px,1fr));
   margin:18px 0 14px;
@@ -545,9 +580,25 @@ button,
   margin:14px 0;
 }
 
-#calculatorView > .actions:has(#newTab){
-  margin-top:12px;
-  padding:10px 0 4px;
+.calc-new-tab{
+  flex:0 0 auto;
+  min-height:30px;
+  padding:5px 9px;
+  color:var(--muted);
+  border-color:transparent;
+  background:transparent;
+  box-shadow:none;
+  font-size:12px;
+  font-weight:720;
+}
+
+.calc-new-tab:hover,
+.calc-new-tab:focus-visible{
+  color:var(--accent-strong);
+  border-color:var(--line);
+  background:var(--cream-tint);
+  box-shadow:none;
+  transform:none;
 }
 
 .calc-template-intro{
@@ -569,16 +620,32 @@ button,
 }
 
 .calc-template-intro[hidden],
+#calcSettings[hidden],
 .calc-import-tools[hidden],
 .calc-import-menu[hidden],
 #calcActions[hidden]{
   display:none;
 }
 
+.calc-input-heading-row{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px 16px;
+  margin:24px 0 12px;
+}
+
+.calc-input-heading-row h2{
+  flex:0 0 auto;
+  margin:0;
+}
+
 .calc-import-tools{
   display:flex;
+  min-width:0;
   justify-content:flex-end;
-  margin:-3px 0 8px;
+  margin:0 0 0 auto;
 }
 
 .calc-import-menu{
@@ -3849,6 +3916,10 @@ table:not(.input-table) .decision-selectable-row:nth-child(even):hover td{
   .raw-filter-row,
   .raw-toolbar,
   .raw-panels{
+    grid-template-columns:1fr;
+  }
+
+  #calcSettings.adjusted-method{
     grid-template-columns:1fr;
   }
 
