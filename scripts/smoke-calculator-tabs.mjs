@@ -94,10 +94,15 @@ try{
 
   await evaluate(`document.getElementById('newTab').click();document.getElementById('newTab').click();document.getElementById('newTab').click()`);
   const calculatorLayout=await evaluate(`(()=>{
+    const metric=id=>{const rect=document.getElementById(id).getBoundingClientRect();return {id,top:rect.top,left:rect.left,right:rect.right,width:rect.width};};
+    const dhondt=['tabTitle','method','factor','memberSeats','substituteSeats'].map(metric),dhondtPanel=document.getElementById('calcSettings').getBoundingClientRect();
     const method=document.getElementById('method');method.value='adjusted';method.dispatchEvent(new Event('change',{bubbles:true}));
-    const controls=['tabTitle','method','factor','seats'].map(id=>{const rect=document.getElementById(id).getBoundingClientRect();return {id,top:rect.top,left:rect.left,right:rect.right};});
+    const controls=['tabTitle','method','factor','seats'].map(metric),adjustedPanel=document.getElementById('calcSettings').getBoundingClientRect();
     const heading=document.getElementById('calcInputTitle').getBoundingClientRect(),imports=document.getElementById('calcImportMenu').getBoundingClientRect();
-    return {controls,controlTopSpread:Math.max(...controls.map(item=>item.top))-Math.min(...controls.map(item=>item.top)),headingCenter:heading.top+heading.height/2,importCenter:imports.top+imports.height/2,columns:getComputedStyle(document.getElementById('calcSettings')).gridTemplateColumns};
+    const byId=rows=>Object.fromEntries(rows.map(item=>[item.id,item])),d=byId(dhondt),a=byId(controls);
+    const sharedStable=['tabTitle','method','factor'].every(id=>Math.abs(d[id].left-a[id].left)<.1&&Math.abs(d[id].width-a[id].width)<.1);
+    const mandateMatchesMember=Math.abs(d.memberSeats.left-a.seats.left)<.1&&Math.abs(d.memberSeats.width-a.seats.width)<.1;
+    return {dhondt,controls,sharedStable,mandateMatchesMember,panelStable:Math.abs(dhondtPanel.width-adjustedPanel.width)<.1&&Math.abs(dhondtPanel.height-adjustedPanel.height)<.1,controlTopSpread:Math.max(...controls.map(item=>item.top))-Math.min(...controls.map(item=>item.top)),headingCenter:heading.top+heading.height/2,importCenter:imports.top+imports.height/2,columns:getComputedStyle(document.getElementById('calcSettings')).gridTemplateColumns};
   })()`);
   const desktopBefore=await evaluate(`({ids:tabs.map(tab=>tab.id),activeId:current().id,templateFirst:isTemplateTab(tabs[0]),newIsLast:document.getElementById('tabs').lastElementChild.id==='newTab'})`);
   const from=await tabCenter(3),target=await tabCenter(1);
@@ -112,7 +117,7 @@ try{
   const duplicate=await evaluate(`(()=>{const before=tabs.length,source=current().id;document.getElementById('duplicateTab').click();return {added:tabs.length===before+1,activeIsCopy:current().id!==source&&activeTab===tabs.length-1,newIsLast:document.getElementById('tabs').lastElementChild.id==='newTab'};})()`);
   const closeAfterReorder=await evaluate(`(()=>{const before=tabs.length;document.querySelector('.tab-wrap.active .calc-tab-close').click();return {removed:tabs.length===before-1,templateFirst:isTemplateTab(tabs[0]),activeValid:activeTab>=0&&activeTab<tabs.length};})()`);
 
-  await evaluate(`resetAll();document.getElementById('newTab').click();document.getElementById('newTab').click();document.getElementById('tabs').scrollLeft=document.getElementById('tabs').scrollWidth`);
+  await evaluate(`tabs=[makeTemplateTab(initialState)];activeTab=0;renderAll();document.getElementById('newTab').click();document.getElementById('newTab').click();document.getElementById('tabs').scrollLeft=document.getElementById('tabs').scrollWidth`);
   await cdp.send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
   await cdp.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:1});
   await wait(100);
@@ -123,21 +128,22 @@ try{
   mobileTarget.x+=20;
   await touchDrag(mobileFrom,mobileTarget);
   const mobileAfter=await evaluate(`({ids:tabs.map(tab=>tab.id),activeId:current().id,activeTab,templateFirst:isTemplateTab(tabs[0]),domIds:[...document.querySelectorAll('.tab-wrap')].map(node=>Number(node.dataset.tabId)),pageFits:document.documentElement.scrollWidth===document.documentElement.clientWidth,settingsColumns:getComputedStyle(document.getElementById('calcSettings')).gridTemplateColumns,pointerEvents:window.__calcPointerEvents})`);
+  const resetBefore=await evaluate(`(()=>{tabs[0].parties[0].votes=999;return {count:tabs.length,calculationIds:tabs.slice(1).map(tab=>tab.id),calculations:JSON.stringify(tabs.slice(1))};})()`);
   await evaluate(`document.getElementById('reset').click()`);
   await waitFor(`!document.getElementById('confirmOverlay').hidden`);
   await evaluate(`document.getElementById('confirmAccept').click()`);
-  await waitFor(`tabs.length===1&&activeTab===0`);
-  const reset=await evaluate(`({templateOnly:tabs.length===1&&isTemplateTab(tabs[0]),newIsLast:document.getElementById('tabs').lastElementChild.id==='newTab',resetVisible:!document.getElementById('reset').hidden})`);
+  await waitFor(`tabs[0].parties[0].votes===initialState.parties[0].votes`);
+  const reset=await evaluate(`({countPreserved:tabs.length===${resetBefore.count},calculationIds:tabs.slice(1).map(tab=>tab.id),calculations:JSON.stringify(tabs.slice(1)),templateReset:tabs[0].parties[0].votes===initialState.parties[0].votes,newIsLast:document.getElementById('tabs').lastElementChild.id==='newTab',resetVisible:!document.getElementById('reset').hidden,label:document.getElementById('reset').textContent.trim()})`);
 
   const failures=[];
   if(placement.newParent!=='tabs'||!placement.newIsLast||placement.duplicateParent!=='calcActions'||placement.resetParent!=='calcActions'||placement.settingsDisplay!=='none'||!placement.templateActions.calculate||!placement.templateActions.reroll||!placement.templateActions.duplicate||placement.templateActions.reset||placement.newHeight>34)failures.push('button placement');
-  if(calculatorLayout.controlTopSpread>2||Math.abs(calculatorLayout.headingCenter-calculatorLayout.importCenter)>2||calculatorLayout.columns.split(' ').length!==4)failures.push('calculator layout');
+  if(!calculatorLayout.sharedStable||!calculatorLayout.mandateMatchesMember||!calculatorLayout.panelStable||calculatorLayout.controlTopSpread>2||Math.abs(calculatorLayout.headingCenter-calculatorLayout.importCenter)>2||calculatorLayout.columns.split(' ').length!==4)failures.push('calculator layout');
   if(!desktopBefore.templateFirst||!desktopBefore.newIsLast||desktopAfter.ids[0]!==desktopBefore.ids[0]||desktopAfter.ids[1]!==desktopBefore.ids[3]||desktopAfter.activeId!==desktopBefore.activeId||desktopAfter.activeTab!==1||desktopAfter.ids.join(',')!==desktopAfter.domIds.join(','))failures.push('desktop drag');
   if(!templateLocked)failures.push('template lock');
   if(!duplicate.added||!duplicate.activeIsCopy||!duplicate.newIsLast)failures.push('duplicate');
   if(!closeAfterReorder.removed||!closeAfterReorder.templateFirst||!closeAfterReorder.activeValid)failures.push('close after reorder');
   if(mobileAfter.ids[0]!==mobileBefore.ids[0]||mobileAfter.ids[1]!==mobileBefore.ids[2]||mobileAfter.activeId!==mobileBefore.activeId||mobileAfter.activeTab!==1||mobileAfter.ids.join(',')!==mobileAfter.domIds.join(',')||!mobileAfter.templateFirst||!mobileAfter.pageFits||mobileAfter.settingsColumns.split(' ').length!==1)failures.push('mobile drag');
-  if(!reset.templateOnly||!reset.newIsLast||!reset.resetVisible)failures.push('reset');
+  if(!reset.countPreserved||JSON.stringify(reset.calculationIds)!==JSON.stringify(resetBefore.calculationIds)||reset.calculations!==resetBefore.calculations||!reset.templateReset||!reset.newIsLast||!reset.resetVisible||reset.label!=='Återställ Huvudvyns initiella data')failures.push('reset');
 
   const result={placement,calculatorLayout,desktopBefore,desktopDrag:{from,target},desktopAfter,templateLocked,duplicate,closeAfterReorder,mobileBefore,mobileDrag:{from:mobileFrom,target:mobileTarget},mobileAfter,reset,failures};
   console.log(JSON.stringify(result,null,2));

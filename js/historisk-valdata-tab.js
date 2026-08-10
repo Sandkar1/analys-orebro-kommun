@@ -1,4 +1,5 @@
 ﻿let rawRows=[],rawColumns=[],rawReady=false,rawSelected=new Set(),rawEligiblePage=0,rawIneligiblePage=0,rawSortColumn='votes',rawSortDir='desc',rawDraftItems=[],rawDraftSelectedId=null,rawNextDraftId=1,rawDataPromise=null,rawPageSizeValue=500,rawFilterLocks={rawYear:[],rawElection:[],rawCounty:[],rawMunicipality:[],rawParty:[]};
+let rawFilterMatchMode='or';
 let groupResolver=null,groupKeyHandler=null,groupLastFocus=null;
 const rawInvalidPartyCodes=new Set(['BLANK','OG','OGEJ']);
 const rawHiddenColumns=new Set(['source_file','turnout_source_file','county_code','municipality_code','municipality_full_code','total_votes_cast','valid_votes_cast','total_eligible_voters','election_participation_percent']);
@@ -263,5 +264,19 @@ const applyRawStateBeforeCompactUrlFinal=applyRawState;
 applyRawState=async function(state){
   const expanded=state&&Array.isArray(state.sr)&&!Array.isArray(state.s)?{...state,s:rawDecodeRanges(state.sr)}:state;
   return applyRawStateBeforeCompactUrlFinal(expanded);
+};
+
+const exportRawStateBeforeFilterModeFinal=exportRawState;
+exportRawState=function(){
+  return {...exportRawStateBeforeFilterModeFinal(),fm:rawFilterMatchMode==='and'?'a':'o'};
+};
+const applyRawStateBeforeFilterModeFinal=applyRawState;
+applyRawState=async function(state){
+  rawFilterMatchMode=state?.fm==='a'?'and':'or';
+  return applyRawStateBeforeFilterModeFinal(state);
+};
+filteredRawRows=function(){
+  const years=selectedRawValues('rawYear'),elections=selectedRawValues('rawElection'),counties=selectedRawValues('rawCounty'),municipalities=selectedRawValues('rawMunicipality'),parties=selectedRawValues('rawParty'),query=fuzzySearchNormalize($('rawSearch').value);
+  return rawRows.filter(row=>filterSelectionMatches(years,rawComparable(row,'year'),rawFilterMatchMode,String)&&filterSelectionMatches(elections,rawComparable(row,'election_type'),rawFilterMatchMode)&&filterSelectionMatches(counties,rawComparable(row,'county_name'),rawFilterMatchMode)&&filterSelectionMatches(municipalities,rawComparable(row,'municipality_name'),rawFilterMatchMode)&&filterSelectionMatches(parties,rawComparable(row,'party_standard'),rawFilterMatchMode)&&(!query||fuzzySearchTextMatches(row.__searchText||(row.__searchText=rawColumns.map(column=>rawDisplay(column,rawValue(row,column))).join(' ')),query)));
 };
 

@@ -3,6 +3,9 @@ const $=id=>document.getElementById(id);
 let calcAllocationSortColumn='order',calcAllocationSortDir='asc';
 const copy=o=>structuredClone(o);
 function esc(v){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function filterSelectionMatches(values,actual,mode='or',normalize=value=>String(value??'')){const selected=Array.isArray(values)?values:[];if(!selected.length)return true;const candidate=normalize(actual),matches=value=>normalize(value)===candidate;return mode==='and'?selected.every(matches):selected.some(matches);}
+function filterPredicateMatches(values,predicate,mode='or'){const selected=Array.isArray(values)?values:[];if(!selected.length)return true;return mode==='and'?selected.every(predicate):selected.some(predicate);}
+function filterModeToggleHtml(mode='or'){const current=mode==='and'?'and':'or',label=current==='and'?'AND':'OR',description=current==='and'?'Alla val i varje filter måste matcha. Klicka för OR.':'Något av valen i varje filter måste matcha. Klicka för AND.';return `<button type="button" class="filter-mode-toggle" data-filter-mode-toggle data-mode="${current}" aria-pressed="${current==='and'}" title="${description}" aria-label="Filterläge ${label}. ${description}"><span class="venn-diagram" aria-hidden="true"><span></span><span></span><i></i></span><span class="filter-mode-label">${label}</span></button>`;}
 const iconOptions=[
   {id:0,label:'Ingen ikon',src:'Logos/logo_none.png'},
   {id:1,label:'Socialdemokraterna',src:'Logos/logo_s.jpg'},
@@ -64,7 +67,7 @@ function syncCalculateAttention(){const btn=$('calculate');if(btn)btn.classList.
 function markDirtyUi(){renderTabs();syncCalculateAttention();}
 function compactSnapshot(snapshot){return [snapshot.cardVotes,snapshot.cardSeatsLabel,snapshot.cardSeats,snapshot.cardParties,snapshot.cardLotteries,snapshot.resultSections,snapshot.stepSections];}
 function expandSnapshot(snapshot){if(Array.isArray(snapshot))return {cardVotes:snapshot[0]??'—',cardSeatsLabel:snapshot[1]??'Mandat',cardSeats:snapshot[2]??'—',cardParties:snapshot[3]??'—',cardLotteries:snapshot[4]??'—',resultSections:snapshot[5]??'',stepSections:snapshot[6]??''};return snapshot;}
-function syncMethodFields(){const isDhondt=$('method').value==='dhondt';$('calcSettings').classList.toggle('adjusted-method',!isDhondt);$('factor').disabled=isDhondt;$('factor').parentElement.style.opacity=isDhondt?'.55':'1';$('memberSeats')?.parentElement&&( $('memberSeats').parentElement.style.display=isDhondt?'flex':'none');$('substituteSeats')?.parentElement&&( $('substituteSeats').parentElement.style.display=isDhondt?'flex':'none');$('seats').parentElement.style.display=isDhondt?'none':'flex';}
+function syncMethodFields(){const isDhondt=$('method').value==='dhondt';$('factor').disabled=isDhondt;$('factor').parentElement.style.opacity=isDhondt?'.55':'1';$('memberSeats')?.parentElement&&( $('memberSeats').parentElement.style.display=isDhondt?'flex':'none');$('substituteSeats')?.parentElement&&( $('substituteSeats').parentElement.style.display=isDhondt?'flex':'none');$('seats').parentElement.style.display=isDhondt?'none':'flex';}
 function makeTab(data,title){const d=copy(data);return {id:nextTabId++,role:d.role==='template'?'template':'calculation',title:title||d.title||`Beräkning ${nextTabId}`,method:d.method||'dhondt',factor:d.factor||'1.2',seats:Number(d.seats)||17,memberSeats:Number(d.memberSeats??d.seats)||17,substituteSeats:Number(d.substituteSeats??11)||11,seed:String(d.seed||newSeed()),sourceTotalVotes:d.sourceTotalVotes??null,parties:(d.parties||[]).map((p,i)=>({id:p.id??Date.now()+i,name:p.name||`Parti eller samverkansgrupp ${i+1}`,votes:Number(p.votes)||0,icon:normalizeCalcIcon(p.icon),order:i})),result:null,dirty:d.role==='template'?false:true};}
 function current(){return tabs[activeTab];}
 function isTemplateTab(value=activeTab){const tab=typeof value==='number'?tabs[value]:value;return !!tab&&tab.role==='template';}
@@ -224,7 +227,7 @@ function applyResultSnapshot(snapshot){snapshot=expandSnapshot(snapshot);$('card
 function renderResults(){const t=current();if(t.result||!t.snapshot||isTemplateTab(t))t.snapshot=buildResultSnapshot(t);applyResultSnapshot(t.snapshot);}
 function renderAll(){renderTabs();renderInputs();renderResults();syncCalculateAttention();if(currentTopView()==='decision')renderDecisionView();if(currentTopView()==='decisionActivity')renderDecisionActivityView();if(isTemplateTab())showNotice('');else if(current().dirty)showNotice('Ändringar väntar. Tryck Beräkna mandat för att uppdatera resultatet.');}
 function newSeed(){return String((BigInt(Date.now())*1103515245n+12345n)&((1n<<64n)-1n));}
-function resetAll(){tabs=[makeTemplateTab(initialState)];activeTab=0;renderAll();}
+function resetTemplateInitialData(){readInputs(false);const template=makeTemplateTab(initialState),templateId=tabs[0]?.id;template.id=templateId??template.id;tabs[0]=template;renderAll();}
 function currentTopView(){if($('decisionView').classList.contains('active'))return 'decision';if($('decisionActivityView')?.classList.contains('active'))return 'decisionActivity';return $('rawDataView').classList.contains('active')?'raw':'calculator';}
 function methodLabel(method){return method==='dhondt'?'D’Hondts metod':'Jämkade uddatalsmetoden';}
 function pushSection(rows,title){if(rows.length&&rows[rows.length-1].length)rows.push([]);rows.push([title]);}

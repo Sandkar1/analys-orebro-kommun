@@ -8,7 +8,7 @@
 <link rel="icon" href="assets/election-analysis-icon.svg" type="image/svg+xml">
 <link rel="alternate icon" href="assets/app_icon_modern_compressed.jpg" type="image/jpeg">
 <link rel="apple-touch-icon" href="assets/app_icon_modern_compressed.jpg">
-<link rel="stylesheet" href="styles.css?v=20260810-2">
+<link rel="stylesheet" href="styles.css?v=20260810-4">
 </head>
 <body>
 <main>
@@ -60,17 +60,17 @@
 <label for="substituteSeats">Ersättare</label>
 <input id="substituteSeats" inputmode="numeric">
 </div>
-</div>
 <div class="field seats-standard">
 <label for="seats">Mandat</label>
 <input id="seats" inputmode="numeric">
+</div>
 </div>
 </section>
 <section id="calcActions" class="actions">
 <button id="calculate">Beräkna mandat</button>
 <button id="reroll" class="secondary">Ny lottning</button>
 <button id="duplicateTab" class="secondary">Duplicera flik</button>
-<button id="reset" class="secondary">Återställ initiell data</button>
+<button id="reset" class="secondary">Återställ Huvudvyns initiella data</button>
 </section>
 <div id="error" class="error">
 </div>
@@ -403,7 +403,7 @@
 <section id="confirmOverlay" class="confirm-overlay" hidden>
 <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmMessage">
 <h2 id="confirmTitle">Bekräfta återställning</h2>
-<p id="confirmMessage">Återställa all exporterad data? Detta återgår till den ursprungliga exporterade versionen.</p>
+<p id="confirmMessage">Återställa Huvudvyns partimall till dess initiella data? Beräkningsflikarna påverkas inte.</p>
 <section class="confirm-actions">
 <button id="confirmCancel" class="secondary" type="button">Avbryt</button>
 <button id="confirmAccept" type="button">Återställ</button>
@@ -465,11 +465,11 @@
 <script defer src="data/municipal-protocol-diary-data.js?v=20260624-1"></script>
 <script defer src="data/municipal-decision-table-bootstrap.js?v=20260807-1"></script>
 <script defer src="js/app-core.js?v=20260807-1"></script>
-<script defer src="js/calculator-tab.js?v=20260810-2"></script>
-<script defer src="js/historisk-valdata-tab.js?v=20260807-2"></script>
-<script defer src="js/municipal-protocols-tab.js?v=20260807-2"></script>
-<script defer src="js/search-performance.js?v=20260807-1"></script>
-<script defer src="js/municipal-documents-tab.js?v=20260807-2"></script>
-<script defer src="js/progressive-search.js?v=20260808-13"></script>
+<script defer src="js/calculator-tab.js?v=20260810-4"></script>
+<script defer src="js/historisk-valdata-tab.js?v=20260810-1"></script>
+<script defer src="js/municipal-protocols-tab.js?v=20260810-1"></script>
+<script defer src="js/search-performance.js?v=20260810-1"></script>
+<script defer src="js/municipal-documents-tab.js?v=20260810-1"></script>
+<script defer src="js/progressive-search.js?v=20260810-1"></script>
 <script defer src="js/app.js?v=20260808-8"></script></main></body></html>
 

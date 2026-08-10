@@ -529,15 +529,6 @@ body.calc-tab-dragging *{
   box-shadow:var(--panel-shadow);
 }
 
-#calcSettings.adjusted-method{
-  grid-template-columns:minmax(170px,1fr) minmax(260px,1.45fr) minmax(90px,.4fr) minmax(100px,.45fr);
-}
-
-#calcSettings.adjusted-method .method-params{
-  grid-column:auto;
-  display:block;
-}
-
 .raw-toolbar{
   grid-template-columns:repeat(6,minmax(130px,1fr));
   margin:18px 0 14px;
@@ -1234,6 +1225,75 @@ select[multiple]{
   border-color:#071c35;
   background:var(--primary-button-bg-hover);
   box-shadow:var(--primary-button-shadow-hover);
+}
+
+.filter-mode-toggle{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  min-width:52px;
+  min-height:30px;
+  padding:4px 7px;
+  border:1px solid transparent;
+  border-radius:var(--radius);
+  color:var(--muted);
+  background:transparent;
+  box-shadow:none;
+  font-size:10px;
+  font-weight:780;
+  letter-spacing:.03em;
+  opacity:.82;
+}
+
+.filter-mode-toggle:hover,
+.filter-mode-toggle:focus-visible{
+  color:var(--accent-strong);
+  border-color:var(--line);
+  background:var(--cream-tint);
+  box-shadow:none;
+  transform:none;
+  opacity:1;
+}
+
+.venn-diagram{
+  position:relative;
+  display:inline-block;
+  width:21px;
+  height:14px;
+  flex:0 0 21px;
+}
+
+.venn-diagram > span{
+  position:absolute;
+  top:1px;
+  width:13px;
+  height:13px;
+  border:1.5px solid currentColor;
+  border-radius:50%;
+  background:rgba(255,255,255,.34);
+}
+
+.venn-diagram > span:first-child{left:0;}
+.venn-diagram > span:nth-child(2){right:0;}
+
+.venn-diagram > i{
+  position:absolute;
+  top:4px;
+  left:8px;
+  width:5px;
+  height:7px;
+  border-radius:50%;
+  background:currentColor;
+  opacity:0;
+}
+
+.filter-mode-toggle[data-mode="and"]{
+  color:var(--accent);
+  opacity:1;
+}
+
+.filter-mode-toggle[data-mode="and"] .venn-diagram > i{
+  opacity:.68;
 }
 
 input:disabled{
@@ -3919,8 +3979,8 @@ table:not(.input-table) .decision-selectable-row:nth-child(even):hover td{
     grid-template-columns:1fr;
   }
 
-  #calcSettings.adjusted-method{
-    grid-template-columns:1fr;
+  #calcSettings .method-params{
+    grid-column:auto;
   }
 
   .raw-toolbar,

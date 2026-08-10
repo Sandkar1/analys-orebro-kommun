@@ -257,6 +257,7 @@ ensureDecisionData=function(){
 
 function decisionRuntimeFilterStateKeyFinal(){
   return JSON.stringify([
+    decisionFilterMatchMode,
     decisionDateRanges.map(range=>[range.from,range.to]),
     decisionSearchQuery,
     decisionFilterIds.map(id=>[id,...selectedDecisionValues(id)])
@@ -313,6 +314,7 @@ const buildDecisionFiltersBeforeRuntimeCacheFinal=buildDecisionFilters;
 buildDecisionFilters=function(){
   if(!decisionReady)return buildDecisionFiltersBeforeRuntimeCacheFinal();
   const key=JSON.stringify([
+    decisionFilterMatchMode,
     decisionDateRanges.map(range=>[range.from,range.to]),
     decisionFilterIds.map(id=>[id,...selectedDecisionValues(id)])
   ]);

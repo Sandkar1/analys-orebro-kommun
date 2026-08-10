@@ -512,6 +512,7 @@ function rawOverviewEntriesFinal(summary,active=false){
 
 function rawProgressiveSearchKeyFinal(){
   return JSON.stringify([
+    rawFilterMatchMode,
     fuzzySearchNormalize($('rawSearch')?.value||''),
     ...['rawYear','rawElection','rawCounty','rawMunicipality','rawParty'].map(id=>selectedRawValues(id))
   ]);
@@ -524,11 +525,11 @@ filteredRawRows=function(){
 };
 
 function rawProgressivePredicateFinal(row,filters,query){
-  if(filters.years.length&&!filters.years.includes(String(rawComparable(row,'year'))))return false;
-  if(filters.elections.length&&!filters.elections.includes(rawComparable(row,'election_type')))return false;
-  if(filters.counties.length&&!filters.counties.includes(rawComparable(row,'county_name')))return false;
-  if(filters.municipalities.length&&!filters.municipalities.includes(rawComparable(row,'municipality_name')))return false;
-  if(filters.parties.length&&!filters.parties.includes(rawComparable(row,'party_standard')))return false;
+  if(!filterSelectionMatches(filters.years,rawComparable(row,'year'),rawFilterMatchMode,String))return false;
+  if(!filterSelectionMatches(filters.elections,rawComparable(row,'election_type'),rawFilterMatchMode))return false;
+  if(!filterSelectionMatches(filters.counties,rawComparable(row,'county_name'),rawFilterMatchMode))return false;
+  if(!filterSelectionMatches(filters.municipalities,rawComparable(row,'municipality_name'),rawFilterMatchMode))return false;
+  if(!filterSelectionMatches(filters.parties,rawComparable(row,'party_standard'),rawFilterMatchMode))return false;
   if(!query)return true;
   const text=row.__searchText||(row.__searchText=rawColumns.map(column=>rawDisplay(column,rawValue(row,column))).join(' '));
   return fuzzySearchTextMatches(text,query);
@@ -697,6 +698,7 @@ let decisionActivityProgressivePointerDownFinal=false;
 
 function decisionActivityProgressiveSearchKeyFinal(){
   return JSON.stringify([
+    decisionActivityFilterMatchMode,
     decisionSearchNormalizeFinal(decisionActivitySearchQuery),
     decisionActivityDateRanges,
     ...['type','party','politicalOwner','officialOwner'].map(key=>selectedActivityValues(key))
@@ -754,7 +756,7 @@ progressiveSearchHandlersFinal.set('decision-activity',async job=>{
     do{
       const row=decisionActivityRows[state.index++];
       traversed++;
-      if(!decisionActivityIncludedByDate(row)||filters.types.length&&!filters.types.includes(row.type)||filters.parties.length&&!filters.parties.includes(row.party)||filters.politicalOwners.length&&!filters.politicalOwners.includes(row.politicalOwner)||filters.officialOwners.length&&!filters.officialOwners.includes(row.officialOwner))continue;
+      if(!decisionActivityIncludedByDate(row)||!filterSelectionMatches(filters.types,row.type,decisionActivityFilterMatchMode)||!filterSelectionMatches(filters.parties,row.party,decisionActivityFilterMatchMode)||!filterSelectionMatches(filters.politicalOwners,row.politicalOwner,decisionActivityFilterMatchMode)||!filterSelectionMatches(filters.officialOwners,row.officialOwner,decisionActivityFilterMatchMode))continue;
       if(query&&decisionActivitySearchRelevanceFinal(row,query)<=0)continue;
       state.matches.push(row);
       decisionActivitySummaryCollectFinal(state.summary,row);
@@ -1275,6 +1277,7 @@ function decisionApplyBootstrapFilterOptionsFinal(){
 
 function decisionStableBaseFilterKeyFinal(){
   return JSON.stringify([
+    decisionFilterMatchMode,
     decisionDateRanges.map(range=>[range.from,range.to]),
     decisionFilterIds.map(id=>[id,...selectedDecisionValues(id)])
   ]);
@@ -1347,13 +1350,13 @@ async function decisionStableBuildBaseRowsFinal(job){
   if(members.length&&!votes.length){
     let started=performance.now();
     for(const row of decisionMemberRows){
-      if(decisionDateMatches(row.date)&&(!organs.length||decisionOrganMatches(organs,row.body))&&(!parties.length||parties.includes(municipalNorm(row.party)))&&members.includes(row.memberKey||decisionMemberKey(row.name,row.party,row.body)))attendanceKeys.add(row.attendanceKey);
+      if(decisionDateMatches(row.date)&&filterPredicateMatches(organs,value=>decisionOrganMatches([value],row.body),decisionFilterMatchMode)&&filterSelectionMatches(parties,municipalNorm(row.party),decisionFilterMatchMode)&&filterSelectionMatches(members,row.memberKey||decisionMemberKey(row.name,row.party,row.body),decisionFilterMatchMode))attendanceKeys.add(row.attendanceKey);
       if(progressiveSliceExpiredFinal(started,3)){if(!await progressiveSearchFrameFinal(job))return null;started=performance.now();}
     }
   }
   let started=performance.now();
   for(const row of decisionRows){
-    if(decisionDateMatches(row.date)&&(!parties.length||parties.includes(municipalNorm(row.party)))&&(!members.length||members.includes(decisionMemberKey(row.name,row.party,row.body)))&&(!votes.length||votes.includes(String(row.vote)))){
+    if(decisionDateMatches(row.date)&&filterSelectionMatches(parties,municipalNorm(row.party),decisionFilterMatchMode)&&filterSelectionMatches(members,decisionMemberKey(row.name,row.party,row.body),decisionFilterMatchMode)&&filterSelectionMatches(votes,String(row.vote),decisionFilterMatchMode)){
       const key=`${row.id}|${row.point}`;
       matchedKeys.add(key);
       if(!counts.has(key))counts.set(key,{voteRoundCount:0,voteCount:0,yes:0,no:0,abstain:0,absent:0,voteIds:new Set()});
@@ -1365,14 +1368,14 @@ async function decisionStableBuildBaseRowsFinal(job){
   }
   started=performance.now();
   for(const row of decisionPositionRows){
-    if(decisionDateMatches(row.date)&&(!parties.length||parties.includes(municipalNorm(row.party)))&&(!members.length||members.includes(decisionMemberKey(row.name,row.party,row.body)))&&(!votes.length||votes.includes(String(row.vote))))matchedKeys.add(`${row.id}|${row.point}`);
+    if(decisionDateMatches(row.date)&&filterSelectionMatches(parties,municipalNorm(row.party),decisionFilterMatchMode)&&filterSelectionMatches(members,decisionMemberKey(row.name,row.party,row.body),decisionFilterMatchMode)&&filterSelectionMatches(votes,String(row.vote),decisionFilterMatchMode))matchedKeys.add(`${row.id}|${row.point}`);
     if(progressiveSliceExpiredFinal(started,3)){if(!await progressiveSearchFrameFinal(job))return null;started=performance.now();}
   }
   const output=[];
   started=performance.now();
   for(const row of decisionAllPointRows){
     const key=`${row.id}|${row.point}`,count=counts.get(key),hasAttendance=attendanceKeys.has(row.attendanceKey);
-    if((types.length&&!types.includes(row?.isMeeting?'meeting':decisionProposalTypeCanonicalFinal(row.proposalType||'beslut')))||!decisionDateMatches(row.date)||(organs.length&&!decisionOrganMatches(organs,row.body))||(results.length&&!results.includes(decisionResultFilterGroup(row.result||'beslut')))||(requiresVoteMatch&&!matchedKeys.has(key)&&!hasAttendance))continue;
+    if(!filterSelectionMatches(types,row?.isMeeting?'meeting':decisionProposalTypeCanonicalFinal(row.proposalType||'beslut'),decisionFilterMatchMode)||!decisionDateMatches(row.date)||!filterPredicateMatches(organs,value=>decisionOrganMatches([value],row.body),decisionFilterMatchMode)||!filterSelectionMatches(results,decisionResultFilterGroup(row.result||'beslut'),decisionFilterMatchMode)||(requiresVoteMatch&&!matchedKeys.has(key)&&!hasAttendance))continue;
     const fallback={voteRoundCount:0,voteCount:0,yes:0,no:0,abstain:0,absent:0},current=count||fallback;
     if(requiresVoteMatch&&!hasAttendance)output.push({...row,voteRoundCount:current.voteRoundCount||0,voteCount:current.voteCount||0,yes:current.yes||0,no:current.no||0,abstain:current.abstain||0,absent:current.absent||0});
     else if(requiresVoteMatch&&hasAttendance&&!count)output.push({...row,voteRoundCount:row.fullVoteRoundCount||0,voteCount:row.fullVoteCount||0,yes:row.fullYes||0,no:row.fullNo||0,abstain:row.fullAbstain||0,absent:row.fullAbsent||0});
@@ -1503,9 +1506,9 @@ function decisionShouldUseTableIndexFinal(){
 function decisionTableIndexPredicateFinal(row,query){
   const organs=selectedDecisionValues('decisionOrgan'),results=normalizeDecisionResultFilterSelection(selectedDecisionValues('decisionResult')),types=selectedDecisionValues('decisionProposalType').map(decisionProposalTypeCanonicalFinal);
   if(!decisionDateMatches(row.date))return false;
-  if(organs.length&&!decisionOrganMatches(organs,row.body))return false;
-  if(results.length&&!results.includes(decisionResultFilterGroup(row.result||'beslut')))return false;
-  if(types.length&&!types.includes(row?.isMeeting?'meeting':decisionProposalTypeCanonicalFinal(row.proposalType||'beslut')))return false;
+  if(!filterPredicateMatches(organs,value=>decisionOrganMatches([value],row.body),decisionFilterMatchMode))return false;
+  if(!filterSelectionMatches(results,decisionResultFilterGroup(row.result||'beslut'),decisionFilterMatchMode))return false;
+  if(!filterSelectionMatches(types,row?.isMeeting?'meeting':decisionProposalTypeCanonicalFinal(row.proposalType||'beslut'),decisionFilterMatchMode))return false;
   if(!query)return true;
   const quickQuery=fuzzySearchNormalize(query);
   return decisionStableQuickSearchTextFinal(row).includes(quickQuery)||decisionStableSearchMatchesFinal(row,query);
@@ -2155,7 +2158,7 @@ renderRawFilterLocks=function(){
   });
   host.hidden=!chips.length;
   host.innerHTML=chips.map(chip=>`<span class="raw-filter-chip"><span>${esc(chip.label)}</span><button type="button" data-id="${esc(chip.id)}" data-value="${esc(chip.value)}" title="Rensa filter" aria-label="Rensa filter">×</button></span>`).join('');
-  if(chips.length)host.insertAdjacentHTML('beforeend','<button type="button" class="filter-clear-all" data-clear-all-filters title="Rensa alla filter" aria-label="Rensa alla filter">× Rensa alla</button>');
+  if(chips.length)host.insertAdjacentHTML('beforeend','<button type="button" class="filter-clear-all" data-clear-all-filters title="Rensa alla filter" aria-label="Rensa alla filter">× Rensa alla</button>'+filterModeToggleHtml(rawFilterMatchMode));
   host.querySelectorAll('.raw-filter-chip button').forEach(button=>button.onclick=()=>{
     rawFilterLocks[button.dataset.id]=selectedRawValues(button.dataset.id).filter(value=>value!==button.dataset.value);
     buildRawFilters();
@@ -2164,6 +2167,11 @@ renderRawFilterLocks=function(){
   host.querySelector('[data-clear-all-filters]')?.addEventListener('click',()=>{
     rawFilterIds.forEach(id=>{rawFilterLocks[id]=[];});
     buildRawFilters();
+    rawScheduleProgressiveFinal();
+  });
+  host.querySelector('[data-filter-mode-toggle]')?.addEventListener('click',()=>{
+    rawFilterMatchMode=rawFilterMatchMode==='or'?'and':'or';
+    renderRawFilterLocks();
     rawScheduleProgressiveFinal();
   });
 };
@@ -2573,13 +2581,18 @@ renderActivityFilterLocks=function(){
   });
   host.hidden=!chips.length;
   host.innerHTML=chips.map(chip=>`<span class="raw-filter-chip"><span>${esc(chip.label)}</span><button type="button" data-key="${esc(chip.key)}" data-value="${esc(chip.value)}" title="Rensa filter" aria-label="Rensa filter">×</button></span>`).join('');
-  if(chips.length)host.insertAdjacentHTML('beforeend','<button type="button" class="filter-clear-all" data-clear-all-filters title="Rensa alla filter" aria-label="Rensa alla filter">× Rensa alla</button>');
+  if(chips.length)host.insertAdjacentHTML('beforeend','<button type="button" class="filter-clear-all" data-clear-all-filters title="Rensa alla filter" aria-label="Rensa alla filter">× Rensa alla</button>'+filterModeToggleHtml(decisionActivityFilterMatchMode));
   host.querySelectorAll('.raw-filter-chip button').forEach(button=>button.onclick=()=>{
     decisionActivityFilters[button.dataset.key]=selectedActivityValues(button.dataset.key).filter(value=>value!==button.dataset.value);
     decisionActivityActiveTab=0;resetDecisionActivityPage();renderDecisionActivityView();
   });
   host.querySelector('[data-clear-all-filters]')?.addEventListener('click',()=>{
     ids.forEach(id=>{const key=$(id)?.dataset.activityKey;if(key)decisionActivityFilters[key]=[];});
+    decisionActivityActiveTab=0;resetDecisionActivityPage();renderDecisionActivityView();
+  });
+  host.querySelector('[data-filter-mode-toggle]')?.addEventListener('click',()=>{
+    decisionActivityFilterMatchMode=decisionActivityFilterMatchMode==='or'?'and':'or';
+    decisionActivityManualSortContextFinal='';
     decisionActivityActiveTab=0;resetDecisionActivityPage();renderDecisionActivityView();
   });
 };
@@ -2649,7 +2662,7 @@ renderDecisionFilterLocks=function(){
   });
   host.hidden=!chips.length;
   host.innerHTML=chips.map(chip=>`<span class="raw-filter-chip"><span>${esc(chip.label)}</span><button type="button" data-id="${esc(chip.id)}" data-value="${esc(chip.value)}" title="Rensa filter" aria-label="Rensa filter">×</button></span>`).join('');
-  if(chips.length)host.insertAdjacentHTML('beforeend','<button type="button" class="filter-clear-all" data-clear-all-filters title="Rensa alla filter" aria-label="Rensa alla filter">× Rensa alla</button>');
+  if(chips.length)host.insertAdjacentHTML('beforeend','<button type="button" class="filter-clear-all" data-clear-all-filters title="Rensa alla filter" aria-label="Rensa alla filter">× Rensa alla</button>'+filterModeToggleHtml(decisionFilterMatchMode));
   host.querySelectorAll('.raw-filter-chip button').forEach(button=>button.onclick=()=>{
     decisionFilterLocks[button.dataset.id]=selectedDecisionValues(button.dataset.id).filter(value=>value!==button.dataset.value);
     decisionReconcileFilterSelectFinal(button.dataset.id);
@@ -2659,6 +2672,12 @@ renderDecisionFilterLocks=function(){
   host.querySelector('[data-clear-all-filters]')?.addEventListener('click',()=>{
     decisionFilterIds.forEach(id=>{decisionFilterLocks[id]=[];});
     decisionFilterIds.forEach(decisionReconcileFilterSelectFinal);
+    renderDecisionFilterLocks();
+    decisionScheduleProgressiveRefreshFinal();
+  });
+  host.querySelector('[data-filter-mode-toggle]')?.addEventListener('click',()=>{
+    decisionFilterMatchMode=decisionFilterMatchMode==='or'?'and':'or';
+    decisionManualSortContextFinal='';
     renderDecisionFilterLocks();
     decisionScheduleProgressiveRefreshFinal();
   });
