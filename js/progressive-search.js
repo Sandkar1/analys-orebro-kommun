@@ -2152,14 +2152,15 @@ buildRawFilters=function(){
   const revision=++rawFilterControlRevisionFinal;
   const selectedCounties=selectedRawValues('rawCounty'),isOr=rawFilterMatchMode==='or';
   const municipalities=!isOr&&selectedCounties.length?new Set(selectedCounties.flatMap(county=>[...(options.municipalitiesByCounty.get(county)||[])])):new Set(options.municipalities);
-  if(!isOr)rawFilterLocks.rawMunicipality=selectedRawValues('rawMunicipality').filter(value=>municipalities.has(value));
+  if(!isOr&&rawReady)rawFilterLocks.rawMunicipality=selectedRawValues('rawMunicipality').filter(value=>municipalities.has(value));
+  const retainSelected=(values,selected)=>{const output=[...values],known=new Set(output.map(String));selected.forEach(value=>{if(!known.has(String(value))){known.add(String(value));output.push(value);}});return output;};
   renderRawFilterLocks();
   const fields=[
-    ['rawYear',options.years,rawFilterLocks.rawYear,'year'],
-    ['rawElection',options.elections,rawFilterLocks.rawElection,'election_type'],
-    ['rawCounty',options.counties,rawFilterLocks.rawCounty,'county_name'],
-    ['rawMunicipality',[...municipalities].sort((a,b)=>String(a).localeCompare(String(b),'sv',{numeric:true})),rawFilterLocks.rawMunicipality,'municipality_name'],
-    ['rawParty',isOr?options.parties:rawPartyOptionsByCurrentContext(rawRows),rawFilterLocks.rawParty,'party_standard']
+    ['rawYear',retainSelected(options.years,rawFilterLocks.rawYear),rawFilterLocks.rawYear,'year'],
+    ['rawElection',retainSelected(options.elections,rawFilterLocks.rawElection),rawFilterLocks.rawElection,'election_type'],
+    ['rawCounty',retainSelected(options.counties,rawFilterLocks.rawCounty),rawFilterLocks.rawCounty,'county_name'],
+    ['rawMunicipality',retainSelected([...municipalities].sort((a,b)=>String(a).localeCompare(String(b),'sv',{numeric:true})),rawFilterLocks.rawMunicipality),rawFilterLocks.rawMunicipality,'municipality_name'],
+    ['rawParty',retainSelected(isOr?options.parties:rawPartyOptionsByCurrentContext(rawRows),rawFilterLocks.rawParty),rawFilterLocks.rawParty,'party_standard']
   ];
   let index=0;
   const applyNext=()=>{
@@ -2275,16 +2276,43 @@ setRawPageSize=function(size){
 /* Decode and materialize historical rows cooperatively. Only the table is
    updated while the dataset is being restored; the rest of the view remains
    fully interactive. */
+let rawLoadingRetargetFinal=null;
+function rawLoadingRequestFinal(){
+  return {
+    filters:{mode:rawFilterMatchMode,years:selectedRawValues('rawYear'),elections:selectedRawValues('rawElection'),counties:selectedRawValues('rawCounty'),municipalities:selectedRawValues('rawMunicipality'),parties:selectedRawValues('rawParty')},
+    query:fuzzySearchNormalize($('rawSearch')?.value||'')
+  };
+}
+function rawLoadingStateFinal(total){
+  return {key:rawProgressiveSearchKeyFinal(),matches:[],visibleRows:[],previewEligible:[],previewIneligible:[],sortedRows:[],summary:rawOverviewAccumulatorFinal(),index:0,total,initialLoad:true,hasPainted:false,paintPending:false,revealEligible:0,revealIneligible:0};
+}
+function rawLoadingCollectMatchFinal(state,row,filters,query){
+  if(!rawProgressivePredicateFinal(row,filters,query))return;
+  state.matches.push(row);
+  rawOverviewCollectFinal(state.summary,row);
+  progressiveInsertRankedFinal(isRawInvalidVoteRow(row)?state.previewIneligible:state.previewEligible,row,rawProgressiveCompareFinal,rawPageSize());
+}
 function rawLoadHistoricWorkerFinal(worker){
   return new Promise((resolve,reject)=>{
     let state=null,filters=null,query='',filterAccumulator=null,lastPaint=performance.now(),workerComplete=false,drainScheduled=false,finishing=false;
     const queue=[];let queueIndex=0;
+    const retarget=()=>{
+      if(finishing||!state)return false;
+      const request=rawLoadingRequestFinal();filters=request.filters;query=request.query;
+      state=rawLoadingStateFinal(state.total);
+      rawProgressiveSearchStateFinal=state;
+      rawProgressivePaintFinal(state,false);
+      lastPaint=performance.now();
+      scheduleDrain();
+      return true;
+    };
     const finish=async()=>{
       if(finishing||!state)return;
       finishing=true;
       try{
         worker.terminate();
         rawPublishLoadingFilterOptionsFinal(filterAccumulator,true);
+        rawLoadingRetargetFinal=null;
         rawReady=true;
         buildRawFilters();
         const current=rawProgressiveSearchStateFinal===state&&state.key===rawProgressiveSearchKeyFinal();
@@ -2300,13 +2328,18 @@ function rawLoadHistoricWorkerFinal(worker){
         drainScheduled=false;
         if(finishing)return;
         const started=performance.now();let traversed=0;
-        while(queueIndex<queue.length&&traversed<progressiveRecordsPerFrameFinal.raw&&!progressiveSliceExpiredFinal(started,4)){
-          const row=queue[queueIndex++];row.__rawId=rawRows.length+1;rawRows.push(row);state.index=rawRows.length;traversed++;
-          rawCollectFilterOptionFinal(filterAccumulator,row);
-          if(rawProgressivePredicateFinal(row,filters,query)){
-            state.matches.push(row);
-            rawOverviewCollectFinal(state.summary,row);
-            progressiveInsertRankedFinal(isRawInvalidVoteRow(row)?state.previewIneligible:state.previewEligible,row,rawProgressiveCompareFinal,rawPageSize());
+        /* A retargeted filter first catches up over the rows already decoded.
+           Only then do we materialize another chunk. This keeps one owner for
+           both loading and filtering and prevents a short partial scan from
+           appearing complete while more source rows are still arriving. */
+        while(state.index<rawRows.length&&traversed<progressiveRecordsPerFrameFinal.raw&&!progressiveSliceExpiredFinal(started,4)){
+          rawLoadingCollectMatchFinal(state,rawRows[state.index++],filters,query);traversed++;
+        }
+        if(state.index===rawRows.length){
+          while(queueIndex<queue.length&&traversed<progressiveRecordsPerFrameFinal.raw&&!progressiveSliceExpiredFinal(started,4)){
+            const row=queue[queueIndex++];row.__rawId=rawRows.length+1;rawRows.push(row);traversed++;
+            rawCollectFilterOptionFinal(filterAccumulator,row);
+            rawLoadingCollectMatchFinal(state,row,filters,query);state.index++;
           }
         }
         rawPublishLoadingFilterOptionsFinal(filterAccumulator);
@@ -2315,7 +2348,7 @@ function rawLoadHistoricWorkerFinal(worker){
           if(now-lastPaint>=48||workerComplete&&queueIndex===queue.length){rawProgressivePaintFinal(state,false);lastPaint=now;}
           else $('rawCount').textContent=progressiveResultStatusFinal({active:true,matches:state.matches.length,visible:($('rawEligibleBody')?.children.length||0)+($('rawIneligibleBody')?.children.length||0),index:state.index,total:state.total,progressLabel:'inläst'});
         }
-        if(queueIndex<queue.length)scheduleDrain();
+        if(state.index<rawRows.length||queueIndex<queue.length)scheduleDrain();
         else if(workerComplete)await finish();
       });
     };
@@ -2324,10 +2357,10 @@ function rawLoadHistoricWorkerFinal(worker){
       if(message.type==='historic-meta'){
         rawColumns=(message.columns||[]).filter(column=>!rawHiddenColumns.has(column));
         rawRows=[];
-        filters={mode:rawFilterMatchMode,years:selectedRawValues('rawYear'),elections:selectedRawValues('rawElection'),counties:selectedRawValues('rawCounty'),municipalities:selectedRawValues('rawMunicipality'),parties:selectedRawValues('rawParty')};
-        query=fuzzySearchNormalize($('rawSearch')?.value||'');filterAccumulator=rawFilterAccumulatorFinal();
-        state={key:rawProgressiveSearchKeyFinal(),matches:[],visibleRows:[],previewEligible:[],previewIneligible:[],sortedRows:[],summary:rawOverviewAccumulatorFinal(),index:0,total:Number(message.total)||0,initialLoad:true,hasPainted:false,paintPending:false,revealEligible:0,revealIneligible:0};
+        const request=rawLoadingRequestFinal();filters=request.filters;query=request.query;filterAccumulator=rawFilterAccumulatorFinal();
+        state=rawLoadingStateFinal(Number(message.total)||0);
         rawProgressiveSearchStateFinal=state;
+        rawLoadingRetargetFinal=retarget;
         rawProgressivePaintFinal(state,false);
         lastPaint=performance.now();
       }else if(message.type==='historic-chunk'&&state){
@@ -2359,7 +2392,7 @@ ensureRawData=async function(){
         try{
           await rawLoadHistoricWorkerFinal(worker);
           return;
-        }catch(_error){/* Continue with the cooperative local loader. */}
+        }catch(_error){rawLoadingRetargetFinal=null;/* Continue with the cooperative local loader. */}
       }
       let packed=historicPack;
       if(typeof packed==='string'){
@@ -2373,53 +2406,52 @@ ensureRawData=async function(){
       const sourceRows=Array.isArray(packed)?packed:(packed.r||packed.rows||[]),stringColumns=new Set(packed?.sc||[]),strings=packed?.s||[];
       rawColumns=sourceColumns.filter(column=>!rawHiddenColumns.has(column));
       rawRows=[];
-      const filters={mode:rawFilterMatchMode,years:selectedRawValues('rawYear'),elections:selectedRawValues('rawElection'),counties:selectedRawValues('rawCounty'),municipalities:selectedRawValues('rawMunicipality'),parties:selectedRawValues('rawParty')};
-      const query=fuzzySearchNormalize($('rawSearch')?.value||''),filterAccumulator=rawFilterAccumulatorFinal();
-      const state={key:rawProgressiveSearchKeyFinal(),matches:[],visibleRows:[],previewEligible:[],previewIneligible:[],sortedRows:[],summary:rawOverviewAccumulatorFinal(),index:0,total:sourceRows.length,initialLoad:true,hasPainted:false,paintPending:false,revealEligible:0,revealIneligible:0};
+      let request=rawLoadingRequestFinal(),filters=request.filters,query=request.query,state=rawLoadingStateFinal(sourceRows.length);
+      const filterAccumulator=rawFilterAccumulatorFinal();
       rawProgressiveSearchStateFinal=state;
       rawProgressivePaintFinal(state,false);
-      let lastPaint=performance.now(),started=performance.now(),traversed=0;
-      for(let index=0;index<sourceRows.length;index++){
-        const source=sourceRows[index];
-        let row;
-        if(Array.isArray(source)){
-          row={};
-          for(let columnIndex=0;columnIndex<sourceColumns.length;columnIndex++){
-            const value=source[columnIndex];
-            row[sourceColumns[columnIndex]]=stringColumns.has(columnIndex)&&value!==null?strings[value]:value;
-          }
-        }else row=source;
-        row.__rawId=index+1;
-        rawRows.push(row);
-        rawCollectFilterOptionFinal(filterAccumulator,row);
-        state.index=index+1;
-        traversed++;
-        if(rawProgressivePredicateFinal(row,filters,query)){
-          state.matches.push(row);
-          rawOverviewCollectFinal(state.summary,row);
-          progressiveInsertRankedFinal(isRawInvalidVoteRow(row)?state.previewIneligible:state.previewEligible,row,rawProgressiveCompareFinal,rawPageSize());
+      let lastPaint=performance.now(),sourceIndex=0;
+      rawLoadingRetargetFinal=()=>{
+        request=rawLoadingRequestFinal();filters=request.filters;query=request.query;state=rawLoadingStateFinal(sourceRows.length);
+        rawProgressiveSearchStateFinal=state;rawProgressivePaintFinal(state,false);lastPaint=performance.now();return true;
+      };
+      while(sourceIndex<sourceRows.length||state.index<rawRows.length){
+        const started=performance.now();let traversed=0;
+        while(state.index<rawRows.length&&traversed<progressiveRecordsPerFrameFinal.raw&&!progressiveSliceExpiredFinal(started,4)){
+          rawLoadingCollectMatchFinal(state,rawRows[state.index++],filters,query);traversed++;
         }
-        if(traversed>=progressiveRecordsPerFrameFinal.raw||progressiveSliceExpiredFinal(started,4)){
-          const now=performance.now();
-          rawPublishLoadingFilterOptionsFinal(filterAccumulator);
-          if(rawProgressiveSearchStateFinal===state){
-            if(now-lastPaint>=48||state.index===state.total){rawProgressivePaintFinal(state,false);lastPaint=now;}
-            else $('rawCount').textContent=progressiveResultStatusFinal({active:true,matches:state.matches.length,visible:($('rawEligibleBody')?.children.length||0)+($('rawIneligibleBody')?.children.length||0),index:state.index,total:state.total,progressLabel:'inläst'});
+        if(state.index===rawRows.length){
+          while(sourceIndex<sourceRows.length&&traversed<progressiveRecordsPerFrameFinal.raw&&!progressiveSliceExpiredFinal(started,4)){
+            const source=sourceRows[sourceIndex];let row;
+            if(Array.isArray(source)){
+              row={};
+              for(let columnIndex=0;columnIndex<sourceColumns.length;columnIndex++){
+                const value=source[columnIndex];
+                row[sourceColumns[columnIndex]]=stringColumns.has(columnIndex)&&value!==null?strings[value]:value;
+              }
+            }else row=source;
+            row.__rawId=++sourceIndex;rawRows.push(row);rawCollectFilterOptionFinal(filterAccumulator,row);rawLoadingCollectMatchFinal(state,row,filters,query);state.index++;traversed++;
           }
-          await new Promise(resolve=>requestAnimationFrame(resolve));
-          started=performance.now();traversed=0;
         }
+        const now=performance.now();rawPublishLoadingFilterOptionsFinal(filterAccumulator);
+        if(rawProgressiveSearchStateFinal===state){
+          if(now-lastPaint>=48||sourceIndex===sourceRows.length&&state.index===rawRows.length){rawProgressivePaintFinal(state,false);lastPaint=now;}
+          else $('rawCount').textContent=progressiveResultStatusFinal({active:true,matches:state.matches.length,visible:($('rawEligibleBody')?.children.length||0)+($('rawIneligibleBody')?.children.length||0),index:state.index,total:state.total,progressLabel:'inläst'});
+        }
+        await new Promise(resolve=>requestAnimationFrame(resolve));
       }
       rawPublishLoadingFilterOptionsFinal(filterAccumulator,true);
+      rawLoadingRetargetFinal=null;
       rawReady=true;
       buildRawFilters();
       const current=rawProgressiveSearchStateFinal===state&&state.key===rawProgressiveSearchKeyFinal();
       if(current)await rawFinalizeProgressiveStateFinal(state,{cancelled:false});
       else rawScheduleProgressiveFinal();
     }catch(error){
+      rawLoadingRetargetFinal=null;
       $('rawStatus').textContent='Den inbäddade JSON-datan kunde inte läsas: '+error.message;
       throw error;
-    }finally{rawDataPromise=null;}
+    }finally{rawLoadingRetargetFinal=null;rawDataPromise=null;}
   })();
   return rawDataPromise;
 };
@@ -3056,6 +3088,11 @@ progressiveSearchHandlersFinal.set('decision-activity',async job=>{
 
 const scheduleTableSearchBeforeMemoFinal=scheduleTableSearch;
 scheduleTableSearch=function(key,inputId,tableIds,render){
+  if(key==='raw'&&rawDataPromise&&!rawReady){
+    municipalStopObsoleteTableJobFinal('raw','rawSearch',['rawEligibleBody','rawIneligibleBody']);
+    rawLoadingRetargetFinal?.();
+    return;
+  }
   if(key==='decision'&&decisionRestoreMemoFinal())return;
   if(key==='decision-activity'&&activityRestoreMemoFinal())return;
   if(key==='raw'&&rawRestoreMemoFinal())return;

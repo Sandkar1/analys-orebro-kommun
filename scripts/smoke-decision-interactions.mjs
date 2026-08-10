@@ -66,6 +66,8 @@ try{
     for(let attempt=0;attempt<800&&!decisionProgressiveSearchStateFinal?.finished;attempt++)await wait(20);
     const initialLoadMs=performance.now()-initialLoadStarted;
     const input=document.querySelector('#decisionDecisionSearch');
+    document.querySelector('#decisionMasterPane').scrollIntoView({block:'center'});
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
     const values=['s','sk','sko','skol','skola','skolan','skolans','skolansx','skolansxy','skolansxyz'];
     const samples=[],started=performance.now();
     for(const value of values){
