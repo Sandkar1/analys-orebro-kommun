@@ -277,12 +277,12 @@ applyRawState=async function(state){
 };
 filteredRawRows=function(){
   const years=selectedRawValues('rawYear'),elections=selectedRawValues('rawElection'),counties=selectedRawValues('rawCounty'),municipalities=selectedRawValues('rawMunicipality'),parties=selectedRawValues('rawParty'),query=fuzzySearchNormalize($('rawSearch').value);
-  return rawRows.filter(row=>filterGroupsMatch([
-    {active:years.length,matches:filterSelectionMatches(years,rawComparable(row,'year'),rawFilterMatchMode,String)},
-    {active:elections.length,matches:filterSelectionMatches(elections,rawComparable(row,'election_type'),rawFilterMatchMode)},
-    {active:counties.length,matches:filterSelectionMatches(counties,rawComparable(row,'county_name'),rawFilterMatchMode)},
-    {active:municipalities.length,matches:filterSelectionMatches(municipalities,rawComparable(row,'municipality_name'),rawFilterMatchMode)},
-    {active:parties.length,matches:filterSelectionMatches(parties,rawComparable(row,'party_standard'),rawFilterMatchMode)}
+  return rawRows.filter(row=>filterValueSetsMatch([
+    {values:years,matches:value=>String(value)===String(rawComparable(row,'year'))},
+    {values:elections,matches:value=>value===rawComparable(row,'election_type')},
+    {values:counties,matches:value=>value===rawComparable(row,'county_name')},
+    {values:municipalities,matches:value=>value===rawComparable(row,'municipality_name')},
+    {values:parties,matches:value=>value===rawComparable(row,'party_standard')}
   ],rawFilterMatchMode)&&(!query||fuzzySearchTextMatches(row.__searchText||(row.__searchText=rawColumns.map(column=>rawDisplay(column,rawValue(row,column))).join(' ')),query)));
 };
 

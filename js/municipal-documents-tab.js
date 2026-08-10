@@ -645,10 +645,10 @@ function bindMunicipalDocumentsTabControls(){
 filteredDecisionActivityRows=function(){
   ensureMunicipalDocumentData();
   const query=decisionSearchNormalizeFinal(decisionActivitySearchQuery),types=selectedActivityValues('type'),parties=selectedActivityValues('party'),politicalOwners=selectedActivityValues('politicalOwner'),officialOwners=selectedActivityValues('officialOwner');
-  return decisionActivityRows.filter(row=>decisionActivityIncludedByDate(row)&&filterGroupsMatch([
-    {active:types.length,matches:filterSelectionMatches(types,row.type,decisionActivityFilterMatchMode)},
-    {active:parties.length,matches:filterSelectionMatches(parties,row.party,decisionActivityFilterMatchMode)},
-    {active:politicalOwners.length,matches:filterSelectionMatches(politicalOwners,row.politicalOwner,decisionActivityFilterMatchMode)},
-    {active:officialOwners.length,matches:filterSelectionMatches(officialOwners,row.officialOwner,decisionActivityFilterMatchMode)}
+  return decisionActivityRows.filter(row=>decisionActivityIncludedByDate(row)&&filterValueSetsMatch([
+    {values:types,matches:value=>value===row.type},
+    {values:parties,matches:value=>value===row.party},
+    {values:politicalOwners,matches:value=>value===row.politicalOwner},
+    {values:officialOwners,matches:value=>value===row.officialOwner}
   ],decisionActivityFilterMatchMode)&&(!query||decisionActivitySearchRelevanceFinal(row,query)>0));
 };

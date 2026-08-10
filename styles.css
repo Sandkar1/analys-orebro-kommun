@@ -1434,17 +1434,7 @@ select[multiple]{
   opacity:1;
 }
 
-.filter-mode-toggle small{
-  max-width:76px;
-  color:var(--muted);
-  font-size:9px;
-  font-weight:560;
-  line-height:1.05;
-  letter-spacing:0;
-  text-align:left;
-}
-
-.filter-mode-toggle.is-single-group{
+.filter-mode-toggle.is-single-filter{
   border-color:rgba(184,203,210,.54);
   opacity:.74;
 }
