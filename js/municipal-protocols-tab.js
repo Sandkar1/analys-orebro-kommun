@@ -1,5 +1,5 @@
 let decisionRows=[],decisionDecisionRows=[],decisionAllPointRows=[],decisionReady=false,decisionPageSizeValue=250,decisionTabs=[{kind:'list',id:'list',title:'Ärendelista',page:0}],decisionActiveTab=0,decisionDateRanges=[],decisionDatePickerOpen=false,decisionDateFrom='',decisionDateTo='',decisionDateDraftFrom='',decisionDateHover='',decisionCalendarMonth='',decisionSearchQuery='',decisionFilterLocks={decisionProposalType:[],decisionOrgan:[],decisionParty:[],decisionMember:[],decisionVote:[],decisionResult:[]};
-let decisionSortColumn='date',decisionSortDir='asc',decisionFilterMatchMode='or';
+let decisionSortColumn='date',decisionSortDir='asc';
 const decisionFilterIds=['decisionOrgan','decisionProposalType','decisionParty','decisionMember','decisionVote','decisionResult'];
 
 function municipalText(value){return String(value??'');}
@@ -3849,18 +3849,4 @@ ensureDecisionData=function(){
 const filteredDecisionPointRowsBeforeVoteCounterNormalizationFinal=filteredDecisionPointRows;
 filteredDecisionPointRows=function(){
   return filteredDecisionPointRowsBeforeVoteCounterNormalizationFinal().map(decisionNormalizeVoteCountersFinal);
-};
-
-const exportDecisionStateBeforeFilterModesFinal=exportDecisionState;
-exportDecisionState=function(){
-  const state=exportDecisionStateBeforeFilterModesFinal();
-  state.f={...(state.f||{}),fm:decisionFilterMatchMode==='and'?'a':'o'};
-  state.af={...(state.af||{}),fm:decisionActivityFilterMatchMode==='and'?'a':'o'};
-  return state;
-};
-const applyDecisionStateBeforeFilterModesFinal=applyDecisionState;
-applyDecisionState=function(state){
-  decisionFilterMatchMode=state?.f?.fm==='a'?'and':'or';
-  decisionActivityFilterMatchMode=state?.af?.fm==='a'?'and':'or';
-  return applyDecisionStateBeforeFilterModesFinal(state);
 };

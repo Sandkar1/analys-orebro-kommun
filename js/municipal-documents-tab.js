@@ -8,7 +8,6 @@ var decisionActivityDateDraftFrom='';
 var decisionActivityDateHover='';
 var decisionActivityCalendarMonth='';
 var decisionActivityFilters={type:[],party:[],politicalOwner:[],officialOwner:[]};
-var decisionActivityFilterMatchMode='or';
 var decisionActivitySortColumn='date';
 var decisionActivitySortDir='asc';
 var municipalDocumentActivityRowsEnrichedCache=null;
@@ -650,5 +649,5 @@ filteredDecisionActivityRows=function(){
     {values:parties,matches:value=>value===row.party},
     {values:politicalOwners,matches:value=>value===row.politicalOwner},
     {values:officialOwners,matches:value=>value===row.officialOwner}
-  ],decisionActivityFilterMatchMode)&&(!query||decisionActivitySearchRelevanceFinal(row,query)>0));
+  ])&&(!query||decisionActivitySearchRelevanceFinal(row,query)>0));
 };

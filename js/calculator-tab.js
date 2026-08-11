@@ -3,13 +3,14 @@ const $=id=>document.getElementById(id);
 let calcAllocationSortColumn='order',calcAllocationSortDir='asc';
 const copy=o=>structuredClone(o);
 function esc(v){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-/* Each selected filter chip represents its own result set. */
-function filterValueSetsMatch(filters,mode='and'){
-  const matches=(filters||[]).flatMap(filter=>(filter.values||[]).map(value=>!!filter.matches(value)));
-  if(!matches.length)return true;
-  return mode==='or'?matches.some(Boolean):matches.every(Boolean);
+/* Ordinary faceted search: any selected value may match inside a category,
+   while every active category must match. */
+function filterValueSetsMatch(filters){
+  return (filters||[]).every(filter=>{
+    const values=filter.values||[];
+    return !values.length||values.some(value=>!!filter.matches(value));
+  });
 }
-function filterModeToggleHtml(mode='or',activeFilterCount=2){const current=mode==='and'?'and':'or',label=current==='and'?'AND':'OR',effective=activeFilterCount>=2,description=effective?(current==='and'?'Alla aktiva filter måste matcha. Klicka för OR.':'Minst ett aktivt filter måste matcha. Klicka för AND.'):`${label} påverkar resultatet när minst två filter är aktiva.`,venn='<span class="venn-diagram" aria-hidden="true"><svg viewBox="0 0 32 20" focusable="false"><g class="venn-union-fill"><circle cx="11" cy="10" r="8"></circle><circle cx="21" cy="10" r="8"></circle></g><path class="venn-intersection-fill" d="M16 3.755 A8 8 0 0 1 16 16.245 A8 8 0 0 1 16 3.755 Z"></path><g class="venn-outlines"><circle cx="11" cy="10" r="8"></circle><circle cx="21" cy="10" r="8"></circle></g></svg></span>';return `<button type="button" class="filter-mode-toggle ${effective?'':'is-single-filter'}" data-filter-mode-toggle data-mode="${current}" data-active-filters="${activeFilterCount}" aria-pressed="${current==='and'}" title="${description}" aria-label="Filterläge ${label}. ${description}">${venn}<span class="filter-mode-label">${label}</span></button>`;}
 const iconOptions=[
   {id:0,label:'Ingen ikon',src:'Logos/logo_none.png'},
   {id:1,label:'Socialdemokraterna',src:'Logos/logo_s.jpg'},
