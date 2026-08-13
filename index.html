@@ -8,7 +8,7 @@
 <link rel="icon" href="assets/election-analysis-icon.svg" type="image/svg+xml">
 <link rel="alternate icon" href="assets/app_icon_modern_compressed.jpg" type="image/jpeg">
 <link rel="apple-touch-icon" href="assets/app_icon_modern_compressed.jpg">
-<link rel="stylesheet" href="styles.css?v=20260811-2">
+<link rel="stylesheet" href="styles.css?v=20260813-1">
 </head>
 <body>
 <main>
@@ -105,7 +105,13 @@
 <th>Rad</th>
 <th>Ikon</th>
 <th>Parti eller samverkansgrupp</th>
-<th>Röster</th>
+<th class="calc-vote-heading">
+<span>Röster</span>
+<span id="calcVoteModeToggle" class="calc-vote-mode-toggle" role="group" aria-label="Inmatningssätt för röster">
+<button type="button" data-calc-vote-mode="count" aria-pressed="true">Antal</button>
+<button type="button" data-calc-vote-mode="percent" aria-pressed="false">%</button>
+</span>
+</th>
 <th>
 </th>
 </tr>
@@ -465,12 +471,12 @@
 <script defer src="data/municipal-protocol-diary-data.js?v=20260624-1"></script>
 <script defer src="data/municipal-decision-table-bootstrap.js?v=20260807-1"></script>
 <script defer src="js/app-core.js?v=20260807-1"></script>
-<script defer src="js/calculator-tab.js?v=20260811-1"></script>
+<script defer src="js/calculator-tab.js?v=20260813-1"></script>
 <script defer src="js/historisk-valdata-tab.js?v=20260811-2"></script>
 <script defer src="js/municipal-protocols-tab.js?v=20260811-2"></script>
 <script defer src="js/search-performance.js?v=20260811-1"></script>
 <script defer src="js/municipal-documents-tab.js?v=20260811-2"></script>
 <script defer src="js/progressive-search.js?v=20260811-1"></script>
-<script defer src="js/searchable-filter-dropdowns.js?v=20260810-2"></script>
-<script defer src="js/app.js?v=20260810-1"></script></main></body></html>
+<script defer src="js/searchable-filter-dropdowns.js?v=20260813-1"></script>
+<script defer src="js/app.js?v=20260813-1"></script></main></body></html>
 

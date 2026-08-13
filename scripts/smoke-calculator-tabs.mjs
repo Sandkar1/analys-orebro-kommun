@@ -92,6 +92,26 @@ try{
     newHeight:Math.round(document.getElementById('newTab').getBoundingClientRect().height)
   }))()`);
 
+  const voteInputMode=await evaluate(`(()=>{
+    const countVotes=[365,287,171,105,72],percentVotes=[36.5,28.7,17.1,10.5,7.2],parties=countVotes.map((votes,index)=>({id:index+1,name:'Parti '+(index+1),votes,icon:15,order:index}));
+    const countTab=makeTab({...initialState,role:'calculation',method:'adjusted',seats:17,voteInputMode:'count',parties},'Antal'),countResult=runCalculation(countTab),expected=countResult.adjusted.allocation.map(party=>party.seats),countDhondt=runCalculation({...countTab,method:'dhondt'});
+    const percentTab=makeTab({...initialState,role:'calculation',method:'adjusted',seats:17,voteInputMode:'count',parties},'Procent');
+    tabs=[makeTemplateTab(initialState),percentTab];activeTab=1;renderAll();
+    const defaultMode={countPressed:document.querySelector('[data-calc-vote-mode="count"]').getAttribute('aria-pressed'),percentPressed:document.querySelector('[data-calc-vote-mode="percent"]').getAttribute('aria-pressed'),step:document.querySelector('.p-votes').step,inputMode:document.querySelector('.p-votes').inputMode};
+    document.querySelector('[data-calc-vote-mode="percent"]').click();
+    const inputs=[...document.querySelectorAll('.p-votes')];inputs.forEach((input,index)=>{input.value=String(percentVotes[index]);input.dispatchEvent(new Event('input',{bubbles:true}));});
+    const percentMode={countPressed:document.querySelector('[data-calc-vote-mode="count"]').getAttribute('aria-pressed'),percentPressed:document.querySelector('[data-calc-vote-mode="percent"]').getAttribute('aria-pressed'),step:inputs[0].step,max:inputs[0].max,inputMode:inputs[0].inputMode,unit:document.querySelector('.calc-vote-input-unit')?.textContent||'',values:inputs.map(input=>Number(input.value))};
+    document.getElementById('calculate').click();
+    const actual=current().result.adjusted.allocation.map(party=>party.seats),percentDhondt=runCalculation({...current(),method:'dhondt'}),dhondtSeats=result=>[result.members.allocation.map(party=>party.seats),result.substitutes.allocation.map(party=>party.seats)],firstQuotient=calcDomNumber(document.querySelector('#stepSections tbody tr')?.cells[4]?.textContent),clean=cleanTabState(current()),normalized=normalizeImportedPayload({f:'m',a:0,t:[clean]}).tabs[0];
+    let countDecimalRejected=false,percentOverHundredRejected=false,exportSafe=false;
+    try{runCalculation({...countTab,parties:[{...parties[0],votes:1.5}]});}catch{countDecimalRejected=true;}
+    try{runCalculation({...percentTab,voteInputMode:'percent',parties:[{...parties[0],votes:100.1}]});}catch{percentOverHundredRejected=true;}
+    try{JSON.stringify(exportWorkbookRows());JSON.stringify(tabRows(current()));exportSafe=true;}catch{}
+    const result={defaultMode,percentMode,sameAllocation:JSON.stringify(actual)===JSON.stringify(expected),sameDhondtAllocation:JSON.stringify(dhondtSeats(percentDhondt))===JSON.stringify(dhondtSeats(countDhondt)),actual,expected,total:current().result.totalVotes,firstQuotient,cleanMode:clean.vm,restoredMode:normalized.voteInputMode,countDecimalRejected,percentOverHundredRejected,exportSafe,dirty:current().dirty};
+    tabs=[makeTemplateTab(initialState)];activeTab=0;renderAll();
+    return result;
+  })()`);
+
   await evaluate(`document.getElementById('newTab').click();document.getElementById('newTab').click();document.getElementById('newTab').click()`);
   const calculatorLayout=await evaluate(`(()=>{
     const metric=id=>{const rect=document.getElementById(id).getBoundingClientRect();return {id,top:rect.top,left:rect.left,right:rect.right,width:rect.width};};
@@ -137,6 +157,7 @@ try{
 
   const failures=[];
   if(placement.newParent!=='tabs'||!placement.newIsLast||placement.duplicateParent!=='calcActions'||placement.resetParent!=='calcActions'||placement.settingsDisplay!=='none'||!placement.templateActions.calculate||!placement.templateActions.reroll||!placement.templateActions.duplicate||placement.templateActions.reset||placement.newHeight>34)failures.push('button placement');
+  if(voteInputMode.defaultMode.countPressed!=='true'||voteInputMode.defaultMode.percentPressed!=='false'||voteInputMode.defaultMode.step!=='1'||voteInputMode.defaultMode.inputMode!=='numeric'||voteInputMode.percentMode.countPressed!=='false'||voteInputMode.percentMode.percentPressed!=='true'||voteInputMode.percentMode.step!=='0.01'||voteInputMode.percentMode.max!=='100'||voteInputMode.percentMode.inputMode!=='decimal'||voteInputMode.percentMode.unit!=='%'||!voteInputMode.sameAllocation||!voteInputMode.sameDhondtAllocation||voteInputMode.total!==100||voteInputMode.firstQuotient<=0||voteInputMode.firstQuotient>=100||voteInputMode.cleanMode!=='percent'||voteInputMode.restoredMode!=='percent'||!voteInputMode.countDecimalRejected||!voteInputMode.percentOverHundredRejected||!voteInputMode.exportSafe||voteInputMode.dirty)failures.push('vote input mode');
   if(!calculatorLayout.sharedStable||!calculatorLayout.mandateMatchesMember||!calculatorLayout.panelStable||calculatorLayout.controlTopSpread>2||Math.abs(calculatorLayout.headingCenter-calculatorLayout.importCenter)>2||calculatorLayout.columns.split(' ').length!==4)failures.push('calculator layout');
   if(!desktopBefore.templateFirst||!desktopBefore.newIsLast||desktopAfter.ids[0]!==desktopBefore.ids[0]||desktopAfter.ids[1]!==desktopBefore.ids[3]||desktopAfter.activeId!==desktopBefore.activeId||desktopAfter.activeTab!==1||desktopAfter.ids.join(',')!==desktopAfter.domIds.join(','))failures.push('desktop drag');
   if(!templateLocked)failures.push('template lock');
@@ -145,7 +166,7 @@ try{
   if(mobileAfter.ids[0]!==mobileBefore.ids[0]||mobileAfter.ids[1]!==mobileBefore.ids[2]||mobileAfter.activeId!==mobileBefore.activeId||mobileAfter.activeTab!==1||mobileAfter.ids.join(',')!==mobileAfter.domIds.join(',')||!mobileAfter.templateFirst||!mobileAfter.pageFits||mobileAfter.settingsColumns.split(' ').length!==1)failures.push('mobile drag');
   if(!reset.countPreserved||JSON.stringify(reset.calculationIds)!==JSON.stringify(resetBefore.calculationIds)||reset.calculations!==resetBefore.calculations||!reset.templateReset||!reset.newIsLast||!reset.resetVisible||reset.label!=='Återställ Huvudvyns initiella data')failures.push('reset');
 
-  const result={placement,calculatorLayout,desktopBefore,desktopDrag:{from,target},desktopAfter,templateLocked,duplicate,closeAfterReorder,mobileBefore,mobileDrag:{from:mobileFrom,target:mobileTarget},mobileAfter,reset,failures};
+  const result={placement,voteInputMode,calculatorLayout,desktopBefore,desktopDrag:{from,target},desktopAfter,templateLocked,duplicate,closeAfterReorder,mobileBefore,mobileDrag:{from:mobileFrom,target:mobileTarget},mobileAfter,reset,failures};
   console.log(JSON.stringify(result,null,2));
   if(failures.length)process.exitCode=1;
 }finally{

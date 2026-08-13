@@ -8,6 +8,7 @@ const searchableFilterSelectIdsFinal=[
 ];
 const searchableFilterStatesFinal=new Map();
 let searchableFilterOpenStateFinal=null;
+let searchableFilterPositionFrameFinal=0;
 
 function searchableFilterPlainLabelFinal(value){
   return String(value||'').replace(/^\s*✓\s*/,'').replace(/\s*\(valt\)\s*$/i,'').trim();
@@ -91,10 +92,44 @@ function searchableFilterCloseFinal(state=searchableFilterOpenStateFinal,{restor
   state.panel.hidden=true;
   state.trigger.setAttribute('aria-expanded','false');
   state.wrapper.classList.remove('is-open');
+  state.wrapper.classList.remove('align-right','align-above');
+  state.list.style.removeProperty('max-height');
   state.input.value='';
   state.resultCount.textContent='';
   if(searchableFilterOpenStateFinal===state)searchableFilterOpenStateFinal=null;
   if(restoreFocus)state.trigger.focus({preventScroll:true});
+}
+
+function searchableFilterPositionFinal(state=searchableFilterOpenStateFinal){
+  if(!state||state.panel.hidden||!state.wrapper.isConnected)return;
+  state.wrapper.classList.remove('align-right','align-above');
+  state.list.style.removeProperty('max-height');
+  let panelRect=state.panel.getBoundingClientRect(),triggerRect=state.trigger.getBoundingClientRect();
+  if(panelRect.right>window.innerWidth-8)state.wrapper.classList.add('align-right');
+
+  // On phones, focusing the search field opens the software keyboard and
+  // changes the visual viewport. Keep the picker open and fit it into the
+  // remaining visible area instead of treating that resize as dismissal.
+  const viewport=window.visualViewport;
+  const viewportTop=viewport?.offsetTop||0;
+  const viewportBottom=viewportTop+(viewport?.height||window.innerHeight);
+  const spaceBelow=Math.max(0,viewportBottom-triggerRect.bottom-8);
+  const spaceAbove=Math.max(0,triggerRect.top-viewportTop-8);
+  const alignAbove=panelRect.height>spaceBelow&&spaceAbove>spaceBelow;
+  if(alignAbove)state.wrapper.classList.add('align-above');
+  const available=alignAbove?spaceAbove:spaceBelow;
+  const listRect=state.list.getBoundingClientRect();
+  const panelChrome=Math.max(0,panelRect.height-listRect.height);
+  state.list.style.maxHeight=`${Math.max(64,Math.min(290,Math.floor(available-panelChrome)))}px`;
+}
+
+function searchableFilterSchedulePositionFinal(state=searchableFilterOpenStateFinal){
+  if(!state||state.panel.hidden)return;
+  if(searchableFilterPositionFrameFinal)cancelAnimationFrame(searchableFilterPositionFrameFinal);
+  searchableFilterPositionFrameFinal=requestAnimationFrame(()=>{
+    searchableFilterPositionFrameFinal=0;
+    if(searchableFilterOpenStateFinal===state)searchableFilterPositionFinal(state);
+  });
 }
 
 function searchableFilterOpenFinal(state,initialQuery=''){
@@ -106,13 +141,12 @@ function searchableFilterOpenFinal(state,initialQuery=''){
   state.wrapper.classList.add('is-open');
   state.input.value=initialQuery;
   searchableFilterRenderFinal(state);
-  state.wrapper.classList.remove('align-right','align-above');
-  let panelRect=state.panel.getBoundingClientRect(),triggerRect=state.trigger.getBoundingClientRect();
-  if(panelRect.right>window.innerWidth-8)state.wrapper.classList.add('align-right');
-  if(panelRect.bottom>window.innerHeight-8&&triggerRect.top-panelRect.height>=8)state.wrapper.classList.add('align-above');
+  searchableFilterPositionFinal(state);
   requestAnimationFrame(()=>{
+    if(searchableFilterOpenStateFinal!==state||state.panel.hidden)return;
     state.input.focus({preventScroll:true});
     state.input.setSelectionRange(state.input.value.length,state.input.value.length);
+    searchableFilterSchedulePositionFinal(state);
   });
 }
 
@@ -203,4 +237,6 @@ searchableFilterSelectIdsFinal.forEach(id=>searchableFilterEnhanceFinal($(id)));
 document.addEventListener('pointerdown',event=>{
   if(searchableFilterOpenStateFinal&&!event.target.closest('.searchable-filter-select'))searchableFilterCloseFinal(searchableFilterOpenStateFinal);
 });
-window.addEventListener('resize',()=>searchableFilterCloseFinal(searchableFilterOpenStateFinal),{passive:true});
+window.addEventListener('resize',()=>searchableFilterSchedulePositionFinal(),{passive:true});
+window.visualViewport?.addEventListener('resize',()=>searchableFilterSchedulePositionFinal(),{passive:true});
+window.visualViewport?.addEventListener('scroll',()=>searchableFilterSchedulePositionFinal(),{passive:true});
