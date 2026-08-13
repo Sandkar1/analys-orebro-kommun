@@ -56,7 +56,35 @@ function calcPartyIconFromName(name){
 }
 function calculatorInputVoteTotal(tab){return (tab?.parties||[]).reduce((sum,party)=>{const votes=Number(party.votes);return sum+(Number.isFinite(votes)?votes:0);},0);}
 function calcVoteInputMode(value){return value==='percent'?'percent':'count';}
-function calcVotePercentValues(values){const numbers=values.map(value=>Math.max(0,Number(value)||0)),total=numbers.reduce((sum,value)=>sum+value,0);return numbers.map(value=>total?Number((value*100/total).toFixed(6)):0);}
+const calcVotePercentScale=1000000,calcVotePercentTotalUnits=100*calcVotePercentScale;
+function calcVotePercentUnits(value){return Math.max(0,Math.min(calcVotePercentTotalUnits,Math.round((Number(value)||0)*calcVotePercentScale)));}
+function calcDistributedPercentUnits(weights,target){
+  if(!weights.length)return [];
+  if(target<=0)return weights.map(()=>0);
+  const positive=weights.map(value=>Math.max(0,Number(value)||0)),total=positive.reduce((sum,value)=>sum+value,0),effective=total?positive:positive.map(()=>1),effectiveTotal=total||effective.length;
+  const quotas=effective.map(value=>value*target/effectiveTotal),units=quotas.map(Math.floor);
+  let remaining=target-units.reduce((sum,value)=>sum+value,0);
+  const ranked=quotas.map((quota,index)=>({index,remainder:quota-units[index]})).sort((a,b)=>b.remainder-a.remainder||a.index-b.index);
+  for(let i=0;i<remaining;i++)units[ranked[i%ranked.length].index]++;
+  return units;
+}
+function calcNormalizedPercentValues(values,fixedIndex=null){
+  const units=values.map(calcVotePercentUnits);
+  if(!units.length)return [];
+  const fixed=Number.isInteger(fixedIndex)&&fixedIndex>=0&&fixedIndex<units.length;
+  if(!fixed){
+    if(!units.some(Boolean))return units.map(()=>0);
+    return calcDistributedPercentUnits(units,calcVotePercentTotalUnits).map(value=>value/calcVotePercentScale);
+  }
+  if(units.length===1)return [100];
+  // Keep the edited row fixed and distribute the remaining micro-percent units
+  // proportionally. Largest remainders make the displayed values total exactly 100.
+  const result=units.map(()=>0),otherIndexes=units.map((_,index)=>index).filter(index=>index!==fixedIndex),remaining=calcVotePercentTotalUnits-units[fixedIndex],distributed=calcDistributedPercentUnits(otherIndexes.map(index=>units[index]),remaining);
+  result[fixedIndex]=units[fixedIndex];
+  otherIndexes.forEach((index,offset)=>{result[index]=distributed[offset];});
+  return result.map(value=>value/calcVotePercentScale);
+}
+function calcVotePercentValues(values){const weights=values.map(value=>Math.max(0,Number(value)||0));if(!weights.some(Boolean))return weights.map(()=>0);return calcDistributedPercentUnits(weights,calcVotePercentTotalUnits).map(value=>value/calcVotePercentScale);}
 function calcVoteCountValues(values,basis){const numbers=values.map(value=>Math.max(0,Number(value)||0)),total=numbers.reduce((sum,value)=>sum+value,0),target=Math.max(1,Math.round(Number(basis)||100));if(!total)return numbers.map(()=>0);const quotas=numbers.map(value=>value*target/total),counts=quotas.map(Math.floor);let remaining=target-counts.reduce((sum,value)=>sum+value,0);quotas.map((quota,index)=>({index,remainder:quota-counts[index]})).sort((a,b)=>b.remainder-a.remainder||a.index-b.index).slice(0,remaining).forEach(item=>counts[item.index]++);return counts;}
 function calcVoteEquivalentValues(mode,values,basis){return calcVoteInputMode(mode)==='count'?calcVotePercentValues(values):calcVoteCountValues(values,basis);}
 function calcVoteDisplayValue(value,percent=false){const number=Number(value);if(!Number.isFinite(number))return '';return percent?number.toFixed(6).replace(/0+$/,'').replace(/\.$/,''):String(Math.round(number));}
@@ -113,7 +141,16 @@ function bindCalcSortableTables(){const box=$('resultSections');if(!box||box.dat
 function seedBigInt(seed){const text=String(seed||1);let x=0n;for(const ch of text){x=(x*131n+BigInt(ch.charCodeAt(0)))&((1n<<64n)-1n);}return x||1n;}
 function rng(seed){let x=seedBigInt(seed)&((1n<<64n)-1n);return ()=>{x^=x<<13n;x&=(1n<<64n)-1n;x^=x>>7n;x^=x<<17n;x&=(1n<<64n)-1n;return Number(x%1000000n)/1000000;};}
 function readInputs(markDirty=true){const t=current();if(!t)return;t.title=isTemplateTab(t)?'Huvudvy':($('tabTitle').value.trim()||`Beräkning ${activeTab}`);t.method=$('method').value;t.factor=$('factor').value;t.seats=Number($('seats').value);t.memberSeats=Number($('memberSeats').value);t.substituteSeats=Number($('substituteSeats').value);t.parties=[...$('inputRows').querySelectorAll('tr')].map((tr,i)=>({id:Number(tr.dataset.id),name:tr.querySelector('.p-name').value.trim(),votes:Number(tr.querySelector('.p-votes').value),icon:Number(tr.querySelector('.p-icon').value),order:i}));if(calcVoteInputMode(t.voteInputMode)==='count')t.voteCountBasis=Math.max(1,Math.round(calculatorInputVoteTotal(t)));if(isTemplateTab(t))t.dirty=false;else if(markDirty)t.dirty=true;}
-function validate(t){const checkSeats=(value,label)=>{if(!Number.isInteger(value)||value<1||value>10000)throw Error(label+' måste vara ett heltal mellan 1 och 10000.');};if(t.method==='dhondt'){checkSeats(t.memberSeats,'Ledamöter');checkSeats(t.substituteSeats,'Ersättare');}else checkSeats(t.seats,'Mandat');const percent=calcVoteInputMode(t.voteInputMode)==='percent',voteScale=percent?1000000:1;const parties=t.parties.map((p,i)=>({...p,name:(p.name||'').trim()||`Parti eller samverkansgrupp ${i+1}`,votes:Number(p.votes)}));if(parties.length<1)throw Error('Lägg till minst ett parti eller en samverkansgrupp.');for(const p of parties){if(!Number.isFinite(p.votes)||p.votes<0||(percent?p.votes>100:!Number.isInteger(p.votes)))throw Error(percent?'Röster % måste vara tal mellan 0 och 100.':'Röster måste vara heltal större än eller lika med 0.');p.voteScale=voteScale;p.calculationVotes=BigInt(Math.round(p.votes*voteScale));}if(!parties.some(p=>p.calculationVotes>0n))throw Error('Minst en rad måste ha röster.');return parties;}
+function validate(t){
+  const checkSeats=(value,label)=>{if(!Number.isInteger(value)||value<1||value>10000)throw Error(label+' måste vara ett heltal mellan 1 och 10000.');};
+  if(t.method==='dhondt'){checkSeats(t.memberSeats,'Ledamöter');checkSeats(t.substituteSeats,'Ersättare');}else checkSeats(t.seats,'Mandat');
+  const percent=calcVoteInputMode(t.voteInputMode)==='percent',voteScale=percent?calcVotePercentScale:1,parties=t.parties.map((p,i)=>({...p,name:(p.name||'').trim()||`Parti eller samverkansgrupp ${i+1}`,votes:Number(p.votes)}));
+  if(parties.length<1)throw Error('Lägg till minst ett parti eller en samverkansgrupp.');
+  for(const party of parties)if(!Number.isFinite(party.votes)||party.votes<0||(percent?party.votes>100:!Number.isInteger(party.votes)))throw Error(percent?'Röster % måste vara tal mellan 0 och 100.':'Röster måste vara heltal större än eller lika med 0.');
+  const normalized=percent?calcNormalizedPercentValues(parties.map(party=>party.votes)):parties.map(party=>party.votes),calculationParties=parties.map((party,index)=>({...party,votes:normalized[index],voteScale,calculationVotes:BigInt(Math.round(normalized[index]*voteScale))}));
+  if(!calculationParties.some(party=>party.calculationVotes>0n))throw Error('Minst en rad måste ha röster.');
+  return calculationParties;
+}
 function runSeatAllocation(baseParties,seats,method,factor,seed){const active=baseParties.map(p=>({...p,seats:0}));const random=rng(seed);const steps=[],lotteries=[];for(let seat=1;seat<=seats;seat++){const ranked=active.map(p=>{const divisor=divFor(method,p.seats,factor);return {party:p,divisor,quotient:quot(calcVoteWeight(p),divisor)};}).sort((a,b)=>cmp(b.quotient,a.quotient)||a.party.order-b.party.order);const top=ranked[0].quotient;const tied=ranked.filter(x=>cmp(x.quotient,top)===0);let winner=ranked[0];let lottery=false;let lotteryParties=[];if(tied.length>1){lottery=true;lotteryParties=tied.map(x=>x.party.name);winner=tied[Math.floor(random()*tied.length)];lotteries.push({seat,parties:lotteryParties,winner:winner.party.name});}winner.party.seats++;steps.push({seat,party:winner.party.name,partyId:winner.party.id,votes:winner.party.votes,voteScale:winner.party.voteScale,divisor:winner.divisor,quotient:{...winner.quotient,displayScale:winner.party.voteScale},lottery,lotteryParties});}return {allocation:active,steps,lotteries};}
 function runCalculation(t){const base=validate(t);const factor=parseFactor(t.factor),voteScale=calcVoteScaleValue(base[0]),rawTotalVotes=base.reduce((s,p)=>s+p.votes,0),totalVotes=voteScale===1?rawTotalVotes:Number(rawTotalVotes.toFixed(6));if(t.method==='dhondt'){const members=runSeatAllocation(base,t.memberSeats,'dhondt',factor,t.seed+'m');const substitutes=runSeatAllocation(base,t.substituteSeats,'dhondt',factor,t.seed+'e');return {method:t.method,totalVotes,voteInputMode:calcVoteInputMode(t.voteInputMode),voteScale,members,substitutes,lotteries:[...members.lotteries,...substitutes.lotteries]};}const adjusted=runSeatAllocation(base,t.seats,'adjusted',factor,t.seed);return {method:t.method,totalVotes,voteInputMode:calcVoteInputMode(t.voteInputMode),voteScale,adjusted,lotteries:adjusted.lotteries};}
 function lotteriesOnLastMandate(result){
@@ -209,15 +246,29 @@ function importCalculationMandates(){readInputs(false);const source=tabs.find(ta
 function renderCalculatorMode(){const template=isTemplateTab();$('calcTemplateIntro').hidden=!template;$('calcSettings').hidden=template;$('calcActions').hidden=false;$('calculate').hidden=template;$('reroll').hidden=template;$('calcSummary').hidden=false;$('calcSummary').classList.toggle('calc-template-summary',template);$('resultSections').hidden=template;$('stepSections').hidden=template;$('duplicateTab').hidden=template;$('calcInputTitle').textContent=template?'Partimall':'Indata';renderCalculationImportTools();}
 function syncCalcVoteModeControl(){const mode=calcVoteInputMode(current()?.voteInputMode);$('calcVoteModeToggle')?.querySelectorAll('[data-calc-vote-mode]').forEach(button=>{const active=button.dataset.calcVoteMode===mode;button.classList.toggle('is-active',active);button.setAttribute('aria-pressed',active?'true':'false');});}
 function syncCalcVoteEquivalentFields(){const t=current(),mode=calcVoteInputMode(t?.voteInputMode),rows=[...$('inputRows').querySelectorAll('tr')],values=rows.map(row=>Number(row.querySelector('.p-votes')?.value)||0),equivalents=calcVoteEquivalentValues(mode,values,t?.voteCountBasis);rows.forEach((row,index)=>{const field=row.querySelector('.p-votes-equivalent');if(field)field.value=calcVoteDisplayValue(equivalents[index],mode==='count');});}
+function normalizeCalcPercentParties(t){if(calcVoteInputMode(t?.voteInputMode)!=='percent'||!t.parties?.length)return false;const normalized=calcNormalizedPercentValues(t.parties.map(party=>party.votes)),changed=t.parties.some((party,index)=>Number(party.votes)!==normalized[index]);if(changed){t.parties=t.parties.map((party,index)=>({...party,votes:normalized[index]}));if(!isTemplateTab(t))t.dirty=true;}return changed;}
+function normalizeCalcPercentInput(input){
+  const inputs=[...$('inputRows').querySelectorAll('.p-votes')],fixedIndex=inputs.indexOf(input);
+  if(fixedIndex<0)return;
+  const normalized=calcNormalizedPercentValues(inputs.map(field=>field.value),fixedIndex);
+  inputs.forEach((field,index)=>{
+    if(field===input&&field.value==='')return;
+    const display=calcVoteDisplayValue(normalized[index],true);
+    if(field.value!==display&&Number(field.value)!==normalized[index])field.value=display;
+    else if(field!==input)field.value=display;
+  });
+}
 function setCalcVoteInputMode(mode){const t=current(),next=calcVoteInputMode(mode);if(!t||t.voteInputMode===next)return;readInputs(false);const converted=calcVoteEquivalentValues(t.voteInputMode,t.parties.map(party=>party.votes),t.voteCountBasis);t.parties=t.parties.map((party,index)=>({...party,votes:converted[index]}));t.voteInputMode=next;renderInputs();$('calcVoteModeToggle')?.querySelector(`[data-calc-vote-mode="${next}"]`)?.focus({preventScroll:true});}
 function importCalculationMandatesAsCounts(){const target=current();if(target)target.voteInputMode='count';importCalculationMandates();if(target){target.voteCountBasis=Math.max(1,Math.round(calculatorInputVoteTotal(target)));renderInputs();}}
 function renderInputs(){
   const t=current();
   $('tabTitle').value=t.title;$('method').value=t.method;$('factor').value=t.factor;$('seats').value=t.seats;$('memberSeats').value=t.memberSeats;$('substituteSeats').value=t.substituteSeats;syncMethodFields();
   const percent=calcVoteInputMode(t.voteInputMode)==='percent';
+  if(percent&&normalizeCalcPercentParties(t)&&!isTemplateTab(t))markDirtyUi();
   const equivalents=calcVoteEquivalentValues(t.voteInputMode,t.parties.map(party=>party.votes),t.voteCountBasis);
   $('inputRows').innerHTML=t.parties.map((p,i)=>{const percentValue=percent?p.votes:equivalents[i],countField=percent?'':`<span class="calc-vote-field"><input class="p-votes" type="number" min="0" step="1" inputmode="numeric" value="${esc(calcVoteDisplayValue(p.votes))}" aria-label="Antal röster för ${esc(p.name)}"></span>`;return `<tr data-id="${p.id}"><td>${i+1}</td><td><div class="icon-field">${iconMarkup(p.icon)}<select class="p-icon">${iconOptions.map(o=>`<option value="${o.id}" ${Number(p.icon)===o.id?'selected':''}>${esc(o.label)}</option>`).join('')}</select></div></td><td><input class="p-name" value="${esc(p.name)}"></td><td><span class="calc-vote-pair${percent?' is-percent-only':''}">${countField}<span class="calc-vote-field is-percent"><input class="${percent?'p-votes':'p-votes-equivalent'}" type="number" min="0" max="100" step="0.01" inputmode="decimal" value="${esc(calcVoteDisplayValue(percentValue,true))}" aria-label="Röster i procent för ${esc(p.name)}" ${percent?'':'disabled'}><span class="calc-vote-input-unit" aria-hidden="true">%</span></span></span></td><td><button class="secondary p-del" type="button">Ta bort</button></td></tr>`;}).join('');
-  const commitInput=()=>{
+  const commitInput=(voteInput=null)=>{
+    if(percent&&voteInput)normalizeCalcPercentInput(voteInput);
     readInputs(true);
     syncCalcVoteEquivalentFields();
     if(isTemplateTab()){current().snapshot=buildResultSnapshot(current());applyResultSnapshot(current().snapshot);}
@@ -230,7 +281,7 @@ function renderInputs(){
     commitInput();
   });
   $('inputRows').querySelectorAll('.p-icon').forEach(select=>select.oninput=()=>{syncCalcRowIconPreview(select.closest('tr'),select.value);commitInput();});
-  $('inputRows').querySelectorAll('.p-votes').forEach(input=>input.oninput=commitInput);
+  $('inputRows').querySelectorAll('.p-votes').forEach(input=>input.oninput=()=>commitInput(input));
   $('inputRows').querySelectorAll('.p-del').forEach(btn=>btn.onclick=()=>{readInputs(true);const id=Number(btn.closest('tr').dataset.id);current().parties=current().parties.filter(p=>p.id!==id);renderAll();showNotice(isTemplateTab()?'Huvudvyn har uppdaterats. Nya beräkningsflikar kommer att kopiera den här partimallen.':'Ändringar väntar. Tryck Beräkna mandat för att uppdatera resultatet.');});
   syncCalcVoteModeControl();
   renderCalculatorMode();

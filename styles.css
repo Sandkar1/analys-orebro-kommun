@@ -1789,16 +1789,25 @@ td.num{
   text-align:left;
 }
 
-.calc-vote-heading > span:first-child{
-  display:block;
-  margin-bottom:5px;
+.calc-vote-heading-inner{
+  display:flex;
+  width:220px;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  white-space:nowrap;
+}
+
+.calc-vote-heading-label{
+  flex:0 0 auto;
 }
 
 .calc-vote-mode-toggle{
   display:grid;
   grid-template-columns:repeat(2,minmax(0,1fr));
-  width:100%;
-  min-width:220px;
+  flex:0 0 174px;
+  width:174px;
+  min-width:174px;
   padding:2px;
   border:1px solid #b8cbd2;
   border-radius:7px;
@@ -1810,7 +1819,7 @@ td.num{
 .calc-vote-mode-toggle button{
   min-width:0;
   min-height:25px;
-  padding:3px 7px;
+  padding:3px 5px;
   border:0;
   border-radius:5px;
   color:#7a858b;
@@ -1840,7 +1849,7 @@ td.num{
 .calc-vote-pair{
   display:grid;
   grid-template-columns:minmax(0,1fr) minmax(0,1fr);
-  width:100%;
+  width:220px;
   min-width:220px;
   gap:6px;
 }
