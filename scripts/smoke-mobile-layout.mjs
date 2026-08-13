@@ -65,7 +65,8 @@ async function audit(label,width){
       const rect=element.getBoundingClientRect();return rect.left<-.75||rect.right>viewport+.75;
     }).slice(0,12).map(element=>({tag:element.tagName,id:element.id,class:String(element.className||'').slice(0,80),rect:[Math.round(element.getBoundingClientRect().left),Math.round(element.getBoundingClientRect().right)]}));
     const tinyControls=[...document.querySelectorAll('button,input,select,textarea')].filter(visible).filter(element=>{const rect=element.getBoundingClientRect();return rect.width<24||rect.height<24;}).slice(0,12).map(element=>element.id||element.className||element.tagName);
-    return {label:${JSON.stringify(label)},width,innerWidth,clientWidth:document.documentElement.clientWidth,pageScrollWidth:document.documentElement.scrollWidth,outside,tinyControls,active:currentTopView(),mainWidth:Math.round(document.querySelector('main').getBoundingClientRect().width)};
+    const offCenterHeaders=[...document.querySelectorAll('table thead th')].filter(visible).filter(header=>getComputedStyle(header).textAlign!=='center').map(header=>header.textContent.trim()).slice(0,12);
+    return {label:${JSON.stringify(label)},width,innerWidth,clientWidth:document.documentElement.clientWidth,pageScrollWidth:document.documentElement.scrollWidth,outside,tinyControls,offCenterHeaders,active:currentTopView(),mainWidth:Math.round(document.querySelector('main').getBoundingClientRect().width)};
   })()`);
 }
 
@@ -167,7 +168,7 @@ try{
 
   await cdp.send('Emulation.setDeviceMetricsOverride',{width:1280,height:800,deviceScaleFactor:1,mobile:false});await wait(50);
   const desktopWrapper=await evaluate(`getComputedStyle(document.querySelector('.mobile-table-scroll')).display`);
-  const failures=results.filter(item=>item.innerWidth!==item.width||item.pageScrollWidth>item.clientWidth+1||item.outside.length||item.tinyControls.length);
+  const failures=results.filter(item=>item.innerWidth!==item.width||item.pageScrollWidth>item.clientWidth+1||item.outside.length||item.tinyControls.length||item.offCenterHeaders.length);
   const output={failures,calculatorScroll,searchableDropdownRect,mobileKeyboardDropdown,decisionSwitchStability,decisionLayout,calendarRect,dialogRect,mobileFacetedFilters,zoomAudit,desktopWrapper,results};
   console.log(JSON.stringify(output,null,2));
   const facetedFilterFailure=mobileFacetedFilters.raw.matches<=0||mobileFacetedFilters.raw.matches!==mobileFacetedFilters.raw.expected||!mobileFacetedFilters.raw.clearVisible||Object.values(mobileFacetedFilters.controls).some(Boolean)||!mobileFacetedFilters.sameCategoryOr||!mobileFacetedFilters.crossCategoryAndRejects;
