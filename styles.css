@@ -1789,6 +1789,20 @@ td.num{
   text-align:left;
 }
 
+.input-table td:nth-child(4){
+  padding-right:0;
+}
+
+.input-table td:nth-child(5),
+.input-table th:nth-child(5){
+  width:1%;
+  white-space:nowrap;
+}
+
+.input-table td:nth-child(5){
+  padding-left:6px;
+}
+
 .calc-vote-heading-inner{
   display:flex;
   width:clamp(320px,36vw,390px);
@@ -1849,7 +1863,7 @@ td.num{
 .calc-vote-pair{
   display:grid;
   grid-template-columns:minmax(0,1fr) minmax(0,1fr);
-  width:clamp(320px,36vw,390px);
+  width:100%;
   min-width:320px;
   gap:6px;
 }
