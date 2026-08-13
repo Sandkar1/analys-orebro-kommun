@@ -1791,7 +1791,7 @@ td.num{
 
 .calc-vote-heading-inner{
   display:flex;
-  width:220px;
+  width:clamp(320px,36vw,390px);
   align-items:center;
   justify-content:center;
   gap:6px;
@@ -1849,8 +1849,8 @@ td.num{
 .calc-vote-pair{
   display:grid;
   grid-template-columns:minmax(0,1fr) minmax(0,1fr);
-  width:220px;
-  min-width:220px;
+  width:clamp(320px,36vw,390px);
+  min-width:320px;
   gap:6px;
 }
 
