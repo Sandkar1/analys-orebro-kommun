@@ -4,7 +4,7 @@ const progressiveSearchHandlersFinal=new Map();
 const scheduleTableSearchBeforeProgressiveFinal=scheduleTableSearch;
 
 const municipalDataWorkerSrcFinal='js/municipal-data-loader-worker.js?v=20260806-4';
-const municipalProtocolPackByteSizesFinal=[29624019];
+const municipalProtocolPackByteSizesFinal=(window.municipalProtocolDataManifest?.parts||[]).map(part=>Number(part.bytes)||0);
 function progressiveCreateDataWorkerFinal(){
   if(typeof Worker!=='function'||window.location.protocol==='file:')return null;
   try{return new Worker(municipalDataWorkerSrcFinal);}

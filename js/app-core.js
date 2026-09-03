@@ -4,10 +4,14 @@ const municipalWorkEnabled=true;
 const historicPack=window.historicPack;
 let decisionPack=window.municipalProtocolPack,documentPack=window.municipalDocumentPack,decisionPackPromise=null;
 const stateFormatVersion=2;
-const municipalProtocolDataVersion='20260806-1';
-const municipalProtocolPackSrcs=[
-  `data/municipal-protocol-data-orebro-v2.js?v=${municipalProtocolDataVersion}`
-];
+const municipalProtocolDataManifest=window.municipalProtocolDataManifest||{
+  version:'20260806-1',
+  parts:[{src:'data/municipal-protocol-data-orebro-v2.js'}]
+};
+const municipalProtocolDataVersion=String(municipalProtocolDataManifest.version||'20260806-1');
+const municipalProtocolPackSrcs=(municipalProtocolDataManifest.parts||[]).map(part=>
+  `${part.src}?v=${municipalProtocolDataVersion}`
+);
 const municipalProtocolMetadataCorrections=new Map([
   ['https://www.orebro.se/download/18.e1b4aa019e62f4e33d2509/1780564233224/2026-05-08%20V%C3%A5rd-%20och%20omsorgsn%C3%A4mnden.pdf',{
     date:'2026-05-28',

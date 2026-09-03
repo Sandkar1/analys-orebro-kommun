@@ -1,2 +1,7 @@
 # Provisional source protocols; keep local until the 2020-2022 collection is complete.
 /data/Protokoll 2020-2022/
+
+# Incremental municipal protocol scraper downloads and run state.
+/data/Protokoll/
+/data/Protokoll-kallfiler/
+/data/Protokoll-normalization-stage/

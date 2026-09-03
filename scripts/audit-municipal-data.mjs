@@ -9,9 +9,16 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const argumentValue = name => {
+  const index = process.argv.indexOf(name);
+  return index >= 0 && process.argv[index + 1] ? process.argv[index + 1] : '';
+};
+const protocolManifestPath = path.resolve(argumentValue('--protocol-manifest') || path.join(root, 'data', 'municipal-protocol-data-manifest.js'));
+const diaryInputPath = path.resolve(argumentValue('--diary-file') || path.join(root, 'data', 'municipal-protocol-diary-data.js'));
 const checkRemote = process.argv.includes('--remote') || process.argv.includes('--source-text');
 const checkSourceText = process.argv.includes('--source-text');
 const samplesPerIssue = 8;
+const publicDataFrom = '2023-01-01';
 const issues = new Map();
 const addIssue = (category, value) => {
   const entry = issues.get(category) || { count: 0, samples: [] };
@@ -53,15 +60,31 @@ vm.runInContext(`
   function pageSlice(rows,page,size){return {rows,page,start:0,pages:1}}
   function fuzzySearchTextMatches(text,query){return String(text).includes(String(query))}
 `, context);
-for (const relative of [
-  'data/municipal-protocol-data-orebro-v2.js',
-  'data/municipal-protocol-diary-data.js',
-  'js/app-core.js',
-  'js/municipal-protocols-tab.js',
-  'js/search-performance.js',
-  'js/municipal-documents-tab.js'
+const assignedJson = (file, marker) => {
+  const text = fs.readFileSync(file, 'utf8'), markerIndex = text.indexOf(marker);
+  if(markerIndex < 0)throw Error(`Invalid assigned JSON file: ${file}`);
+  let json = text.slice(markerIndex + marker.length).trim();
+  if(json.endsWith(';'))json = json.slice(0, -1);
+  return JSON.parse(json);
+};
+const manifest = assignedJson(protocolManifestPath, 'window.municipalProtocolDataManifest=');
+const protocolInputPaths = (manifest.parts || []).map((part, index) => {
+  const source = String(part.src || '');
+  const candidate = argumentValue('--protocol-manifest')
+    ? path.join(path.dirname(protocolManifestPath), path.basename(source))
+    : path.resolve(root, source);
+  if(!fs.existsSync(candidate))throw Error(`Protocol data part ${index + 1} is missing: ${candidate}`);
+  return candidate;
+});
+for (const absolute of [
+  ...protocolInputPaths,
+  diaryInputPath,
+  path.join(root, 'js/app-core.js'),
+  path.join(root, 'js/municipal-protocols-tab.js'),
+  path.join(root, 'js/search-performance.js'),
+  path.join(root, 'js/municipal-documents-tab.js')
 ]) {
-  vm.runInContext(fs.readFileSync(path.join(root, relative), 'utf8'), context, { filename: relative });
+  vm.runInContext(fs.readFileSync(absolute, 'utf8'), context, { filename: path.relative(root, absolute) });
 }
 vm.runInContext('decisionPack=assembleMunicipalProtocolPackParts(); ensureDecisionData();', context);
 const pack = vm.runInContext('decisionPack', context);
@@ -181,6 +204,7 @@ for (let docIndex = 0; docIndex < pack.d.length; docIndex++) {
   if (!document.i || documentIds.has(document.i)) addIssue('duplicate_or_missing_document_id', summary);
   documentIds.add(document.i);
   if (!/^20\d{2}-\d{2}-\d{2}$/.test(String(document.dt || ''))) addIssue('invalid_document_date', summary);
+  else if (String(document.dt) < publicDataFrom) addIssue('document_before_public_cutoff', summary);
   const titleDate = String(document.doc || '').match(/^(20\d{2}-\d{2}-\d{2})/i)?.[1];
   if (titleDate && titleDate !== document.dt) addIssue('document_title_date_mismatch', summary);
   try {
@@ -596,7 +620,7 @@ const report = {
 console.log(JSON.stringify(report, null, 2));
 
 const hardFailures = [
-  'duplicate_or_missing_document_id', 'invalid_document_date', 'document_title_date_mismatch',
+  'duplicate_or_missing_document_id', 'invalid_document_date', 'document_before_public_cutoff', 'document_title_date_mismatch',
   'invalid_source_url', 'non_official_source_url', 'missing_point_metadata',
   'duplicate_decision_point_id', 'runtime_row_invalid_document', 'runtime_field_mismatch',
   'meeting_protocol_diary_mismatch', 'empty_decision_point', 'extraction_boilerplate',

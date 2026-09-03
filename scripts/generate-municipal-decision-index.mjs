@@ -5,11 +5,18 @@ import { gzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const outputPath = path.join(root, 'data', 'municipal-decision-table-index.ndjson.gz');
-const bootstrapOutputPath = path.join(root, 'data', 'municipal-decision-table-bootstrap.js');
-const meetingDetailsOutputPath = path.join(root, 'data', 'municipal-decision-meeting-details.js');
-const partsOutputDirectory = path.join(root, 'data', 'municipal-decision-table-index-parts');
-const indexVersion = '20260807-1';
+const argumentValue = name => {
+  const index = process.argv.indexOf(name);
+  return index >= 0 && process.argv[index + 1] ? process.argv[index + 1] : '';
+};
+const outputDirectory = path.resolve(argumentValue('--output-dir') || path.join(root, 'data'));
+const protocolManifestPath = path.resolve(argumentValue('--protocol-manifest') || path.join(root, 'data', 'municipal-protocol-data-manifest.js'));
+const diaryInputPath = path.resolve(argumentValue('--diary-file') || path.join(root, 'data', 'municipal-protocol-diary-data.js'));
+const outputPath = path.join(outputDirectory, 'municipal-decision-table-index.ndjson.gz');
+const bootstrapOutputPath = path.join(outputDirectory, 'municipal-decision-table-bootstrap.js');
+const meetingDetailsOutputPath = path.join(outputDirectory, 'municipal-decision-meeting-details.js');
+const partsOutputDirectory = path.join(outputDirectory, 'municipal-decision-table-index-parts');
+const indexVersion = argumentValue('--version') || '20260807-1';
 const bootstrapRowCount = 8;
 const partRowCount = 128;
 const domElement = {
@@ -41,14 +48,30 @@ vm.runInContext(`
   function pageSlice(rows,page,size){return {rows,page,start:0,pages:1}}
   function fuzzySearchTextMatches(text,query){return String(text).includes(String(query))}
 `, context);
-for (const relative of [
-  'data/municipal-protocol-data-orebro-v2.js',
-  'data/municipal-protocol-diary-data.js',
-  'js/app-core.js',
-  'js/municipal-protocols-tab.js',
-  'js/search-performance.js',
-  'js/municipal-documents-tab.js'
-]) vm.runInContext(fs.readFileSync(path.join(root, relative), 'utf8'), context, { filename: relative });
+const assignedJson = (file, marker) => {
+  const text = fs.readFileSync(file, 'utf8'), markerIndex = text.indexOf(marker);
+  if(markerIndex < 0)throw Error(`Invalid assigned JSON file: ${file}`);
+  let json = text.slice(markerIndex + marker.length).trim();
+  if(json.endsWith(';'))json = json.slice(0, -1);
+  return JSON.parse(json);
+};
+const manifest = assignedJson(protocolManifestPath, 'window.municipalProtocolDataManifest=');
+const protocolInputPaths = (manifest.parts || []).map((part, index) => {
+  const source = String(part.src || '');
+  const candidate = argumentValue('--protocol-manifest')
+    ? path.join(path.dirname(protocolManifestPath), path.basename(source))
+    : path.resolve(root, source);
+  if(!fs.existsSync(candidate))throw Error(`Protocol data part ${index + 1} is missing: ${candidate}`);
+  return candidate;
+});
+for (const absolute of [
+  ...protocolInputPaths,
+  diaryInputPath,
+  path.join(root, 'js/app-core.js'),
+  path.join(root, 'js/municipal-protocols-tab.js'),
+  path.join(root, 'js/search-performance.js'),
+  path.join(root, 'js/municipal-documents-tab.js')
+]) vm.runInContext(fs.readFileSync(absolute, 'utf8'), context, { filename: path.relative(root, absolute) });
 
 vm.runInContext('decisionPack=assembleMunicipalProtocolPackParts(); ensureDecisionData();', context);
 const rows = vm.runInContext('decisionAllPointRows', context);
@@ -218,6 +241,7 @@ const bootstrapMeetingKeys = new Set(cleanRows.slice(0,bootstrapRowCount).map(ro
 const bootstrapMeetingDetails = Object.fromEntries(Object.entries(fastMeetingDetails).filter(([key])=>bootstrapMeetingKeys.has(key)));
 const lines = [JSON.stringify({ type: 'meta', version: indexVersion, total: rows.length, meetings: fastMeetingDetails }), ...cleanRows.map(JSON.stringify)];
 const ndjson = `${lines.join('\n')}\n`;
+fs.mkdirSync(outputDirectory, { recursive: true });
 fs.writeFileSync(outputPath, gzipSync(ndjson, { level: 9 }));
 fs.mkdirSync(partsOutputDirectory, { recursive: true });
 for (const file of fs.readdirSync(partsOutputDirectory)) {
