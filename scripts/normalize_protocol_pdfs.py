@@ -38,6 +38,8 @@ STAGE = ROOT / "data" / "Protokoll-normalization-stage"
 STATE_PATH = ARCHIVE / "state.json"
 MANIFEST_PATH = ARCHIVE / "meetings.json"
 DATE_RE = re.compile(r"20\d{2}-\d{2}-\d{2}")
+LEGACY_YEARS = frozenset({"2020", "2021", "2022"})
+LEGACY_YEAR_SUFFIX = " (ej komplett, ej inläst)"
 DIARY_RE = re.compile(
     r"(?<![A-Za-zÅÄÖåäö])[A-ZÅÄÖ][A-Za-zÅÄÖåäö]{0,12}\s+\d{1,6}/20\d{2}"
     r"(?![A-Za-zÅÄÖåäö])"
@@ -89,6 +91,21 @@ FOLDER_ALIASES = {
     "kommunstyrelsens-hallbarhetssutskott": "kommunstyrelsens-hallbarhetsutskott",
     "socialnamnden-2023-2024": "socialnamnden",
 }
+
+
+def archive_year_folder(year: str) -> str:
+    """Return the visible archive folder for a meeting year."""
+    return f"{year}{LEGACY_YEAR_SUFFIX}" if year in LEGACY_YEARS else year
+
+
+def year_from_archive_folder(folder: str) -> str | None:
+    """Read the canonical year from either a current or labelled folder."""
+    match = re.fullmatch(r"(20\d{2})(?: \(ej komplett, ej inläst\))?", folder)
+    if not match:
+        return None
+    year = match.group(1)
+    expected = archive_year_folder(year)
+    return year if folder == expected else None
 
 
 # The first matching normalized phrase determines the internal meeting body.
@@ -427,7 +444,8 @@ def duplicate_sources(paths: Iterable[Path]) -> tuple[set[Path], dict[Path, Path
 def collection_candidate(path: Path) -> bool:
     relative = path.relative_to(ARCHIVE)
     first = relative.parts[0]
-    return first == "2020-2022" or (first in {"2020", "2021", "2022"} and not DATE_RE.match(path.name))
+    year = year_from_archive_folder(first)
+    return first == "2020-2022" or (year in LEGACY_YEARS and not DATE_RE.match(path.name))
 
 
 def collect_parts(
@@ -653,7 +671,7 @@ def assign_destinations(meetings: list[Meeting]) -> None:
     for meeting in meetings:
         suffix = diary_filename_suffix(meeting.diary) if same_day[(meeting.body_slug, meeting.date)] > 1 else ""
         filename = f"{meeting.date} {BODY_DISPLAY[meeting.body_slug]}{suffix}.pdf"
-        meeting.destination = ARCHIVE / meeting.date[:4] / meeting.body_slug / filename
+        meeting.destination = ARCHIVE / archive_year_folder(meeting.date[:4]) / meeting.body_slug / filename
 
 
 def changed_meeting(meeting: Meeting, collection_sources: set[Path]) -> bool:
@@ -968,14 +986,18 @@ def validate_archive(meetings: list[Meeting], state: dict[str, Any]) -> dict[str
     keys: dict[tuple[str, str, str], list[str]] = defaultdict(list)
     for path in pdfs:
         relative = path.relative_to(ARCHIVE)
-        if len(relative.parts) != 3 or not re.fullmatch(r"20\d{2}", relative.parts[0]):
+        year = year_from_archive_folder(relative.parts[0]) if len(relative.parts) == 3 else None
+        if not year:
             bad_paths.append(relative.as_posix())
             continue
         match = DATE_RE.match(path.name)
         if not match:
             bad_paths.append(relative.as_posix())
             continue
-        keys[(relative.parts[0], relative.parts[1], match.group(0))].append(relative.as_posix())
+        if match.group(0)[:4] != year:
+            bad_paths.append(relative.as_posix())
+            continue
+        keys[(year, relative.parts[1], match.group(0))].append(relative.as_posix())
         page_count(path)
     duplicates = {"|".join(key): values for key, values in keys.items() if len(values) > 1}
     missing_state = []

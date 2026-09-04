@@ -18,8 +18,12 @@ After a successful download, normalization runs automatically. The public
 archive always has one PDF per actual meeting:
 
 ```text
-data/Protokoll/<year>/<committee>/<date> <committee>.pdf
+data/Protokoll/<year folder>/<committee>/<date> <committee>.pdf
 ```
+
+The incomplete, unpublished legacy archive is visibly labelled as
+`2020 (ej komplett, ej inläst)` through `2022 (ej komplett, ej inläst)`.
+Folders from 2023 onward use the plain four-digit year.
 
 Separate official parts from the same meeting are joined. Multi-meeting legacy
 collections are split. Changed originals are retained recoverably under
